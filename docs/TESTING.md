@@ -116,6 +116,24 @@ Reprise après connexion vérifiée : sans session, l'autorisation redirige vers
 - isolation entre deux utilisateurs ou deux organisations réels (Phase 7) ;
 - interruption client et erreurs Docker : couvertes par le code, pas par un test dédié.
 
+## Phase 7 — tests finaux (02/11/2026)
+
+| Mesure | Résultat |
+|---|---|
+| Suite complète | **1661 passés**, 4 en échec, 6 ignorés (1671) |
+| Échecs | les 4 timeouts de `backup-files.test.ts` sous charge, déjà présents dans la référence upstream ; 14/14 lancé seul |
+| Permissions et isolation réelles | `dev/phase7/isolation-tests.mjs` : **27/27** |
+| Tous les scénarios | `dev/phase7/run-all.sh` : diagnostics A–G (A et E sains ; B, C, D et G en panne avec leur cause), version E 22/22, isolation 27/27, OAuth + MCP 36/36 |
+| Stabilité | après `docker restart` du devbox, `run-all.sh` entièrement OK, puis OAuth + MCP rejoué 3 fois de suite (36/36 à chaque fois) |
+
+`isolation-tests.mjs` utilise un vrai membre restreint (invitation, inscription, accès limité aux apps A, B et E), une 2e organisation et un projet non accordé. Il vérifie que :
+- l'UI et MCP montrent exactement les mêmes apps à ce membre ;
+- tout objet non accordé est refusé (projet non accordé, autre organisation, app non accordée du même projet), en diagnostic comme en action ;
+- un token émis pour l'organisation A ne donne pas accès à l'organisation B, même pour le propriétaire ;
+- impossible d'accorder un client pour une organisation où MCP est désactivé, ou dont on n'est pas membre ;
+- retirer un scope dans l'organisation donne 403 immédiat, et désactiver l'intégration donne 401 immédiat ;
+- un membre ne voit que ses propres clients et son propre audit, et ne peut pas révoquer ceux des autres, alors qu'un admin le peut, avec effet immédiat.
+
 ## Tests manuels de référence (applications de démo)
 
 Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.

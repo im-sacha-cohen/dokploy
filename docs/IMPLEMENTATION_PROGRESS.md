@@ -11,7 +11,7 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
 | 4 — Version tracking | ✅ Validé (02/11/2026) | `docs/SMART_DEPLOY_ENGINE.md`, `smart-deploy/versioning`, migration 0199 |
 | 5 — UI déploiement | ✅ Validé (02/11/2026) | onglet Smart Deploy, `smart-deploy/preflight`, `smart-deploy/actions`, `docs/SMART_DEPLOY_ENGINE.md` |
 | 6 — Serveur MCP + OAuth | ✅ Validé (02/11/2026) | `/mcp`, OAuth 2.1 via better-auth, consentement, Settings › AI Integrations, `docs/MCP_ARCHITECTURE.md`, `docs/MCP_SECURITY.md` |
-| 7 — Tests finaux | 🚧 En cours | — |
+| 7 — Tests finaux | ✅ Validé (02/11/2026) | `docs/FINAL_REPORT.md`, `dev/phase7/` |
 
 ## Journal
 
@@ -85,6 +85,18 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
   - 12 tests unitaires MCP (67 au total dans smart-deploy).
 - Bugs trouvés et corrigés : chemins de logs contenant `:` refusés (affectait aussi `BUILD_FAILED`) ; endpoints RFC 8414 relatifs ; script de test qui écrasait les cookies.
 - Non fait : CIMD, tunnel public pour un client distant, isolation multi-utilisateurs testée en réel (Phase 7).
+
+### 02/11/2026 — Phase 7
+- Phase 6 committée en local (`a5ba6c5`), sans push.
+- `dev/phase7/setup-isolation.mjs` (idempotent) prépare :
+  - une 2e organisation ;
+  - un projet restreint ;
+  - un membre de test invité avec un accès limité (mot de passe aléatoire dans `dev/.env`, gitignoré).
+- `dev/phase7/isolation-tests.mjs` : 27/27. `dev/phase7/run-all.sh` rejoue tous les scénarios.
+- Stabilité : redémarrage complet puis répétitions, tout est vert.
+- Suite complète : 1661 tests passés, seuls les 4 timeouts connus de `backup-files` échouent.
+- `dev/demo-apps/api-client.mjs` gère désormais plusieurs sessions et des en-têtes supplémentaires.
+- Bilan et limitations consolidées : `docs/FINAL_REPORT.md`.
 
 ## Décisions validées
 - Environnement local : devbox Docker-in-Docker.

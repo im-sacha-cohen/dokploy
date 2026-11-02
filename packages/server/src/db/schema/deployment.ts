@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import {
 	type AnyPgColumn,
 	boolean,
+	jsonb,
 	pgEnum,
 	pgTable,
 	text,
@@ -17,6 +18,50 @@ import { rollbacks } from "./rollbacks";
 import { schedules } from "./schedule";
 import { server } from "./server";
 import { volumeBackups } from "./volume-backups";
+
+export type DeploymentKind =
+	| "deploy_latest"
+	| "rebuild"
+	| "redeploy"
+	| "rollback"
+	| "restart";
+
+export type VerificationStatus =
+	| "pending"
+	| "verifying"
+	| "healthy"
+	| "running"
+	| "degraded"
+	| "failed"
+	| "unknown";
+
+export type VerificationStageStatus =
+	| "passed"
+	| "failed"
+	| "skipped"
+	| "not_applicable"
+	| "pending";
+
+export interface VerificationStage {
+	status: VerificationStageStatus;
+	at?: string;
+	detail?: string;
+}
+
+export interface DeploymentVerification {
+	startedAt: string;
+	finishedAt?: string;
+	stages: {
+		build: VerificationStage;
+		containerCreated: VerificationStage;
+		containerRunning: VerificationStage;
+		healthy: VerificationStage;
+		reachable: VerificationStage;
+	};
+	sourceDirty?: boolean;
+	findings?: string[];
+	notes?: string[];
+}
 export const deploymentStatus = pgEnum("deploymentStatus", [
 	"running",
 	"done",
@@ -73,6 +118,23 @@ export const deployments = pgTable("deployment", {
 	buildServerId: text("buildServerId").references(() => server.serverId, {
 		onDelete: "cascade",
 	}),
+	// Smart deploy version tracking. All nullable: rows created by upstream
+	// code paths or before this migration simply have no tracking data.
+	kind: text("kind").$type<DeploymentKind>(),
+	sourceDeploymentId: text("sourceDeploymentId"),
+	sourceRepository: text("sourceRepository"),
+	sourceBranch: text("sourceBranch"),
+	requestedCommitSha: text("requestedCommitSha"),
+	fetchedCommitSha: text("fetchedCommitSha"),
+	builtCommitSha: text("builtCommitSha"),
+	imageId: text("imageId"),
+	imageTag: text("imageTag"),
+	imageDigest: text("imageDigest"),
+	runningImageId: text("runningImageId"),
+	containerId: text("containerId"),
+	taskId: text("taskId"),
+	verificationStatus: text("verificationStatus").$type<VerificationStatus>(),
+	verification: jsonb("verification").$type<DeploymentVerification>(),
 });
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({

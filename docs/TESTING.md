@@ -37,6 +37,20 @@ Toute régression introduite par le fork se mesure contre ce tableau.
 
 Les tests `*.real.test.ts` d'upstream laissent des services `real-*` (0/1) dans le démon Docker **interne** du devbox. Ils sont sans effet sur l'hôte et disparaissent avec `dev-reset.sh`.
 
+## Après la Phase 4 (02/11/2026)
+
+| Mesure | Résultat |
+|---|---|
+| Tests | 1635 passés, 5 en échec, 6 ignorés (1646), dont 42 dans `__test__/smart-deploy` |
+| Échecs | 4 dans `backup-files.test.ts` : timeouts sous charge, comme dans la référence ; **passe seul** (14/14). 1 dans `application.real.test.ts` (build nixpacks réel, timeout de 180 s sous charge) ; **passe seul** |
+| Typecheck | serveur et app : 0 erreur |
+| Scénario E réel | `version-scenario.mjs` : 22/22 |
+| Vérification réelle A, B, C, D, G | healthy, degraded, failed, failed, degraded |
+
+Régressions trouvées puis corrigées pendant la phase. Le premier passage de la suite complète a révélé :
+- `application.command.test.ts` (2 tests) : `deployApplication` exécutait un `git ls-remote` avant la commande de build. La lecture du commit demandé a été déplacée dans la file de déploiement.
+- `application.real.test.ts` (Dockerfile) : le tag `<app>:dpl-…` dupliquait la ligne de `docker images <app>`. Les images conservées vivent désormais dans un dépôt séparé, `dokploy-versions/<app>`.
+
 ## Tests manuels de référence (applications de démo)
 
 Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.
@@ -48,8 +62,8 @@ Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonst
 | Domaine | Type | Statut |
 |---|---|---|
 | Règles de diagnostic (port, crash loop, env, localhost, healthcheck…) | unitaires + scénarios démo B/C/D/G | ✅ 34 tests unitaires ; scénarios A–G (sauf F, Compose) exécutés en réel via `diagnose.mjs` |
-| Version tracking (SHA distant / construit / exécuté, digest) | unitaires + scénario E | à faire (Phase 4) |
-| Timeline / statut de vérification | intégration (devbox) | à faire (Phase 4-5) |
+| Version tracking (SHA distant / construit / exécuté, digest) | unitaires + scénario E | ✅ 8 tests unitaires ; scénario E 22/22 en réel |
+| Timeline / statut de vérification | intégration (devbox) | ✅ statut de vérification par étapes (A–G réels) ; timeline UI : Phase 5 |
 | OAuth (PKCE, audience, expiration, révocation) | API | à faire (Phase 6) |
 | MCP (outils, scopes, isolation projet, injection de logs) | API + MCP Inspector | à faire (Phase 6) |
 | Non-régression | suite upstream complète | référence ci-dessus |

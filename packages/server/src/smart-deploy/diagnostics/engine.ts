@@ -8,6 +8,10 @@ import {
 	notListeningRule,
 	runningTasks,
 } from "./rules/runtime";
+import {
+	gitCommitOutdatedRule,
+	imageVersionMismatchRule,
+} from "./rules/version";
 import type {
 	Confidence,
 	DiagnosticCode,
@@ -28,6 +32,8 @@ export const DEFAULT_RULES: Rule[] = [
 	localhostBindRule,
 	portMismatchRule,
 	reverseProxyRule,
+	imageVersionMismatchRule,
+	gitCommitOutdatedRule,
 ];
 
 /** Which findings explain which: [consequence, possible causes]. */

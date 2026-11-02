@@ -7,6 +7,12 @@ import {
 } from "@dokploy/server/db/schema";
 import { getAdvancedStats } from "@dokploy/server/monitoring/utils";
 import {
+	trackBuildArtifacts,
+	trackBuildFailure,
+	trackDeploymentStart,
+} from "@dokploy/server/smart-deploy/versioning/capture";
+import { startDeploymentVerification } from "@dokploy/server/smart-deploy/versioning/verify";
+import {
 	getBuildCommand,
 	mechanizeDockerContainer,
 } from "@dokploy/server/utils/builders";
@@ -179,10 +185,12 @@ export const deployApplication = async ({
 	applicationId,
 	titleLog = "Manual deployment",
 	descriptionLog = "",
+	requestedCommitSha,
 }: {
 	applicationId: string;
 	titleLog: string;
 	descriptionLog: string;
+	requestedCommitSha?: string | null;
 }) => {
 	const application = await findApplicationById(applicationId);
 	const serverId = application.buildServerId || application.serverId;
@@ -197,6 +205,12 @@ export const deployApplication = async ({
 		title: titleLog,
 		description: descriptionLog,
 	});
+	await trackDeploymentStart(
+		deployment.deploymentId,
+		application,
+		"deploy_latest",
+		requestedCommitSha,
+	);
 
 	try {
 		let command = "set -e;";
@@ -230,10 +244,14 @@ export const deployApplication = async ({
 		} else {
 			await execAsync(commandWithLog);
 		}
+		await trackBuildArtifacts(deployment.deploymentId, application, serverId, {
+			fetched: application.sourceType !== "docker",
+		});
 
 		await mechanizeDockerContainer(application);
 		await updateDeploymentStatus(deployment.deploymentId, "done");
 		await updateApplicationStatus(applicationId, "done");
+		startDeploymentVerification(deployment.deploymentId, applicationId);
 
 		await sendBuildSuccessNotifications({
 			projectName: application.environment.project.name,
@@ -251,6 +269,7 @@ export const deployApplication = async ({
 			serverId,
 		);
 		await writeDeploymentErrorLog(deployment, serverId, error);
+		await trackBuildFailure(deployment.deploymentId);
 		await updateDeploymentStatus(deployment.deploymentId, "error");
 		await updateApplicationStatus(applicationId, "error");
 
@@ -301,6 +320,7 @@ export const rebuildApplication = async ({
 		title: titleLog,
 		description: descriptionLog,
 	});
+	await trackDeploymentStart(deployment.deploymentId, application, "rebuild");
 
 	try {
 		let command = "set -e;";
@@ -312,9 +332,13 @@ export const rebuildApplication = async ({
 		} else {
 			await execAsync(commandWithLog);
 		}
+		await trackBuildArtifacts(deployment.deploymentId, application, serverId, {
+			fetched: false,
+		});
 		await mechanizeDockerContainer(application);
 		await updateDeploymentStatus(deployment.deploymentId, "done");
 		await updateApplicationStatus(applicationId, "done");
+		startDeploymentVerification(deployment.deploymentId, applicationId);
 
 		await sendBuildSuccessNotifications({
 			projectName: application.environment.project.name,
@@ -327,6 +351,7 @@ export const rebuildApplication = async ({
 		});
 	} catch (error) {
 		await writeDeploymentErrorLog(deployment, serverId, error);
+		await trackBuildFailure(deployment.deploymentId);
 		await updateDeploymentStatus(deployment.deploymentId, "error");
 		await updateApplicationStatus(applicationId, "error");
 		throw error;

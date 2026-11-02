@@ -6,6 +6,7 @@ import { getEnvironmentVariablesObject } from "@dokploy/server/utils/docker/util
 import { execAsyncRemote } from "@dokploy/server/utils/process/execAsync";
 import { getRemoteDocker } from "@dokploy/server/utils/servers/remote-docker";
 import type Dockerode from "dockerode";
+import { getRemoteHead } from "../../versioning/remote-head";
 import { parseEnvFileKeys, parseExitCode } from "../log-patterns";
 import { parseProcNetTcp } from "../proc-net";
 import { createRedactor, type Redactor, redactLines } from "../redact";
@@ -137,6 +138,7 @@ const collectContainer = async (
 	return {
 		container: {
 			id: info.Id,
+			imageId: info.Image,
 			startedAt,
 			uptimeSeconds: Math.max(
 				0,
@@ -238,7 +240,7 @@ const collectProbes = async (
  */
 export const collectApplicationContext = async (
 	application: Application,
-	options: { now?: Date; probes?: boolean } = {},
+	options: { now?: Date; probes?: boolean; remote?: boolean } = {},
 ): Promise<DiagnosticContext> => {
 	const now = options.now ?? new Date();
 	const { appName, serverId } = application;
@@ -278,6 +280,16 @@ export const collectApplicationContext = async (
 	const latest = [...application.deployments].sort((a, b) =>
 		b.createdAt.localeCompare(a.createdAt),
 	)[0];
+	const toTracked = (d: (typeof application.deployments)[number]) => ({
+		deploymentId: d.deploymentId,
+		createdAt: d.createdAt,
+		status: d.status,
+		kind: d.kind,
+		imageId: d.imageId,
+		imageTag: d.imageTag,
+		builtCommitSha: d.builtCommitSha,
+	});
+	ctx.version = { latest: latest ? toTracked(latest) : null, running: null };
 	ctx.latestDeployment = latest
 		? {
 				deploymentId: latest.deploymentId,
@@ -345,6 +357,12 @@ export const collectApplicationContext = async (
 			);
 			ctx.container = container;
 			ctx.imageExposedPorts = exposed;
+			const runningDeployment = application.deployments
+				.filter((d) => d.status === "done" && d.imageId === container.imageId)
+				.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+			if (ctx.version && runningDeployment) {
+				ctx.version.running = toTracked(runningDeployment);
+			}
 			ctx.config.envKeys = [...new Set([...ctx.config.envKeys, ...envKeys])];
 		} catch (error) {
 			// On multi-node swarms the task may run on a node this daemon can't inspect.
@@ -400,6 +418,22 @@ export const collectApplicationContext = async (
 			fail("repository", error);
 			break;
 		}
+	}
+
+	if (options.remote !== false && ctx.version?.running?.builtCommitSha) {
+		const head = await getRemoteHead(application);
+		if (ctx.version) {
+			ctx.version.remoteHead =
+				head.status === "ok"
+					? {
+							status: "ok",
+							sha: head.sha,
+							branch: head.branch,
+							checkedAt: head.checkedAt,
+						}
+					: head;
+		}
+		if (head.status === "error") fail("repository", head.reason);
 	}
 
 	if (options.probes !== false && ctx.config.domains.length > 0) {

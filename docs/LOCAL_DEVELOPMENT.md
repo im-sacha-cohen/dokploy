@@ -79,6 +79,8 @@ Ce tableau est la référence avant modification : **les 7 déploiements sont ma
 
 Diagnostic des applications : `node dev/demo-apps/diagnose.mjs [filtre] [--json]` appelle `smartDeploy.diagnoseApplication` sur chaque app du projet de démo (voir `docs/DEPLOYMENT_DIAGNOSTICS.md`).
 
+Suivi de version : `node dev/demo-apps/version-scenario.mjs` joue le scénario E complet (deploy latest, push, rollback, restart, rebuild) et vérifie 22 points (voir `docs/SMART_DEPLOY_ENGINE.md`).
+
 Pour le scénario E : `docker exec dokploy-devbox /workspace/dev/demo-apps/e-outdated-push-v2.sh` fait avancer la branche distante sans redéployer.
 
 ## Incompatibilités macOS et contournements
@@ -99,6 +101,9 @@ Pour le scénario E : `docker exec dokploy-devbox /workspace/dev/demo-apps/e-out
 - Edition Cloud (`apps/api`, Inngest) et `apps/schedules` (Redis/BullMQ) : non démarrés.
 
 ## Dépannage
+
+- **Code modifié dans `packages/server` non pris en compte** : le serveur de dev (`tsx server/server.ts`) ne recharge pas à chaud la file de déploiement. Lancer `docker restart dokploy-devbox`.
+- **Après modification de `dev/devbox/Dockerfile`** : `./scripts/dev-start.sh` reconstruit l'image. L'entrypoint est lu depuis le dépôt monté ; une image antérieure au 02/11/2026 en embarquait une copie figée et doit être reconstruite.
 
 - **Le devbox s'arrête au démarrage** : consulter `docker compose -f docker-compose.dev.yml logs devbox`, puis `docker exec dokploy-devbox tail -50 /var/log/dockerd.log` pour le démon interne.
 - **Port déjà utilisé** : `dev-start.sh` le signale. Le changer dans `dev/.env`.

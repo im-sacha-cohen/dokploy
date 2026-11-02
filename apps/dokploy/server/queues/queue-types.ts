@@ -4,9 +4,11 @@ type DeployJob =
 			titleLog: string;
 			descriptionLog: string;
 			server?: boolean;
-			type: "deploy" | "redeploy";
+			type: "deploy" | "redeploy" | "redeploy-version";
 			applicationType: "application";
 			serverId?: string;
+			/** For "redeploy-version": the deployment whose image is redeployed. */
+			sourceDeploymentId?: string;
 	  }
 	| {
 			composeId: string;

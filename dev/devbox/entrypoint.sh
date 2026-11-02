@@ -4,6 +4,9 @@ set -euo pipefail
 log() { echo "[devbox] $*"; }
 
 start_dockerd() {
+	# The container filesystem survives `docker restart`: stale PID files make
+	# dockerd believe containerd is still running ("timeout waiting for containerd").
+	rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid
 	# cgroup v2 nesting: move our processes out of the root cgroup so dockerd
 	# can enable controllers for its children (same trick as moby's hack/dind).
 	if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
@@ -59,7 +62,13 @@ bootstrap_dokploy() {
 
 start_demo_git_server() {
 	if [ -d /workspace/dev/demo-apps/.repos ]; then
-		node /workspace/dev/git-server.mjs >/var/log/demo-git-server.log 2>&1 &
+		# Own session (setsid): a later step of the startup signals the
+		# entrypoint's process group, which silently killed a plain `&` job.
+		setsid sh -c 'while true; do
+			node /workspace/dev/git-server.mjs
+			echo "[devbox] demo git server exited with code $?, restarting in 2s"
+			sleep 2
+		done' >>/var/log/demo-git-server.log 2>&1 </dev/null &
 		log "demo Git server on http://127.0.0.1:4040"
 	fi
 }

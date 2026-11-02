@@ -43,7 +43,9 @@ export interface Evidence {
  */
 export type FixAction =
 	| { kind: "update_domain_port"; domainId: string; host: string; port: number }
-	| { kind: "set_environment_variables"; keys: string[] };
+	| { kind: "set_environment_variables"; keys: string[] }
+	| { kind: "deploy_latest" }
+	| { kind: "redeploy_deployment"; deploymentId: string };
 
 export interface RecommendedFix {
 	summary: string;
@@ -106,6 +108,7 @@ export interface ContainerHealthFact {
 
 export interface ContainerFact {
 	id: string;
+	imageId?: string;
 	startedAt: string;
 	uptimeSeconds: number;
 	health: ContainerHealthFact;
@@ -125,6 +128,27 @@ export interface ProbeResult {
 	httpStatus?: number;
 	error?: "connection_refused" | "timeout" | "dns" | "other";
 	detail?: string;
+}
+
+export interface TrackedDeploymentFact {
+	deploymentId: string;
+	createdAt: string;
+	status: string | null;
+	kind: string | null;
+	imageId: string | null;
+	imageTag: string | null;
+	builtCommitSha: string | null;
+}
+
+export interface VersionFacts {
+	/** Most recent deployment, whatever its state. */
+	latest: TrackedDeploymentFact | null;
+	/** Deployment whose recorded image is the one running now (exact match). */
+	running: TrackedDeploymentFact | null;
+	remoteHead?:
+		| { status: "ok"; sha: string; branch: string; checkedAt: string }
+		| { status: "error"; reason: string }
+		| { status: "not_applicable"; reason: string };
 }
 
 /**
@@ -155,6 +179,7 @@ export interface DiagnosticContext {
 	probes?: ProbeResult[];
 	logs?: string[];
 	envExampleKeys?: string[];
+	version?: VersionFacts;
 	collectionErrors: { source: EvidenceSource; message: string }[];
 }
 

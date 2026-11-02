@@ -5,6 +5,8 @@ import {
 	rebuildApplication,
 	rebuildCompose,
 	rebuildPreviewApplication,
+	redeployDeploymentVersion,
+	resolveRequestedCommit,
 	updateApplicationStatus,
 	updateCompose,
 	updatePreviewDeployment,
@@ -31,6 +33,16 @@ export const processDeploymentJob = async (job: InMemoryJob) => {
 					applicationId: job.data.applicationId,
 					titleLog: job.data.titleLog,
 					descriptionLog: job.data.descriptionLog,
+					requestedCommitSha: await resolveRequestedCommit(
+						job.data.applicationId,
+					),
+				});
+			} else if (
+				job.data.type === "redeploy-version" &&
+				job.data.sourceDeploymentId
+			) {
+				await redeployDeploymentVersion({
+					sourceDeploymentId: job.data.sourceDeploymentId,
 				});
 			}
 		} else if (job.data.applicationType === "compose") {

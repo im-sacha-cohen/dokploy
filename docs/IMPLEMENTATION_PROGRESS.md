@@ -9,8 +9,8 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
 | 2 — Environnement local | ✅ Validé (02/11/2026) | `docs/LOCAL_DEVELOPMENT.md`, `docs/TESTING.md`, devbox, apps de démo |
 | 3 — Diagnostics | ✅ Validé (02/11/2026) | `docs/DEPLOYMENT_DIAGNOSTICS.md`, `smart-deploy/diagnostics`, API `smartDeploy.diagnoseApplication` |
 | 4 — Version tracking | ✅ Validé (02/11/2026) | `docs/SMART_DEPLOY_ENGINE.md`, `smart-deploy/versioning`, migration 0199 |
-| 5 — UI déploiement | 🚧 En cours | — |
-| 6 — Serveur MCP + OAuth | ⬜ | — |
+| 5 — UI déploiement | ✅ Validé (02/11/2026) | onglet Smart Deploy, `smart-deploy/preflight`, `smart-deploy/actions`, `docs/SMART_DEPLOY_ENGINE.md` |
+| 6 — Serveur MCP + OAuth | 🚧 En cours | — |
 | 7 — Tests finaux | ⬜ | — |
 
 ## Journal
@@ -53,6 +53,17 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
   - serveur Git de démo tué par le démarrage (désormais lancé en `setsid` et supervisé) ;
   - l'ancienne image embarquait une copie figée de l'entrypoint.
 - Constaté, non corrigé (upstream) : au redémarrage, le setup Dokploy tente de recréer Traefik et échoue sur une entrée DNS Swarm déjà existante (`dokploy-traefik-previous`). Traefik reste en service et le démarrage continue.
+
+### 02/11/2026 — Phase 5
+- Phase 4 committée en local (`ad13de3`), sans push.
+- Preflight : clone temporaire avec les fonctions de clone existantes, lecture des manifestes, `git grep` des variables et des lignes d'écoute, puis analyse pure. Détections avec confiance et source, 8 contrôles. Secrets masqués, `.env` jamais lu.
+- API :
+  - `smartDeploy.preflight`, `getDeploymentTimeline`, `deployLatest` ;
+  - `applyFix`, revalidé par un diagnostic frais : seuls les correctifs proposés et `autoFixable` sont acceptés.
+- UI : onglet « Smart Deploy » avec la carte de version courante, l'historique avec redeploy et rollback, et l'assistant Source → Configuration → Preflight → Deployment (timeline réelle) → Result (correctifs confirmés). Onglets existants inchangés.
+- Le verdict de santé n'est plus influencé par `GIT_COMMIT_OUTDATED`.
+- Tests : 56 tests unitaires smart-deploy et parcours réels dans le navigateur (voir `TESTING.md`).
+- Langue : l'interface est en anglais comme Dokploy ; les textes générés par le serveur (constats, raisons) sont en français. **À trancher.**
 
 ## Décisions validées
 - Environnement local : devbox Docker-in-Docker.

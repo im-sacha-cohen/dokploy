@@ -96,7 +96,10 @@ const computeVerdict = (
 	ctx: DiagnosticContext,
 	findings: Finding[],
 ): DiagnosticVerdict => {
-	const significant = findings.filter((f) => f.confidence !== "low");
+	// Version freshness is reported, but says nothing about the app's health.
+	const significant = findings.filter(
+		(f) => f.confidence !== "low" && f.code !== "GIT_COMMIT_OUTDATED",
+	);
 	if (
 		significant.some((f) => f.severity === "critical" || f.severity === "error")
 	) {

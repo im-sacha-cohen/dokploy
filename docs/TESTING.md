@@ -51,6 +51,31 @@ Régressions trouvées puis corrigées pendant la phase. Le premier passage de l
 - `application.command.test.ts` (2 tests) : `deployApplication` exécutait un `git ls-remote` avant la commande de build. La lecture du commit demandé a été déplacée dans la file de déploiement.
 - `application.real.test.ts` (Dockerfile) : le tag `<app>:dpl-…` dupliquait la ligne de `docker images <app>`. Les images conservées vivent désormais dans un dépôt séparé, `dokploy-versions/<app>`.
 
+## Après la Phase 5 (02/11/2026)
+
+| Mesure | Résultat |
+|---|---|
+| Tests | 1648 passés, 6 en échec, 6 ignorés (1660), dont 56 dans `__test__/smart-deploy` |
+| Échecs | 4 dans `backup-files.test.ts`, timeouts sous charge (passe seul, 14/14). 2 dans `application.real.test.ts` (clone réel nixpacks et submodules, en échec sous charge ; passe seul, 5 passés + 1 ignoré) |
+| Typecheck | serveur et app : 0 erreur |
+| Preflight réel | A–G : clone temporaire supprimé, 90 à 250 ms. Constats attendus : port 80 pour B, `DATABASE_URL`/`SESSION_SECRET` pour D, localhost pour G |
+
+Parcours UI testé dans le navigateur intégré (instance locale, compte de test) :
+
+| Parcours | Résultat |
+|---|---|
+| Onglet Smart Deploy sur B : carte de version, preflight, diagnostic | données réelles affichées, constats PORT_MISMATCH et REVERSE_PROXY_UNREACHABLE |
+| B : « Apply fix » (port 80 → 3000) avec confirmation | appliqué, diagnostic « running and reachable », `curl` via Traefik 200 (502 avant). Port 80 remis ensuite pour garder le scénario |
+| A : Deploy latest depuis l'étape 3, puis timeline | 6 étapes observées jusqu'à « reachable », historique rafraîchi automatiquement |
+| E : « Roll back » depuis l'historique | version `be8f6bb` exécutée, statut « Outdated », Deploy latest recommandé |
+
+Défauts trouvés pendant ces tests et corrigés :
+- statut figé au résultat du déploiement → statut *live* ajouté ;
+- historique non rafraîchi après la timeline ;
+- Roll back proposé vers l'image déjà en cours ;
+- « outdated » comptait comme « degraded » ;
+- badge illisible.
+
 ## Tests manuels de référence (applications de démo)
 
 Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.
@@ -63,7 +88,8 @@ Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonst
 |---|---|---|
 | Règles de diagnostic (port, crash loop, env, localhost, healthcheck…) | unitaires + scénarios démo B/C/D/G | ✅ 34 tests unitaires ; scénarios A–G (sauf F, Compose) exécutés en réel via `diagnose.mjs` |
 | Version tracking (SHA distant / construit / exécuté, digest) | unitaires + scénario E | ✅ 8 tests unitaires ; scénario E 22/22 en réel |
-| Timeline / statut de vérification | intégration (devbox) | ✅ statut de vérification par étapes (A–G réels) ; timeline UI : Phase 5 |
+| Timeline / statut de vérification | intégration (devbox) + UI | ✅ A–G réels ; timeline UI testée dans le navigateur |
+| Preflight, applyFix, UI | unitaires + navigateur | ✅ 14 tests unitaires ; parcours réels (voir Phase 5) |
 | OAuth (PKCE, audience, expiration, révocation) | API | à faire (Phase 6) |
 | MCP (outils, scopes, isolation projet, injection de logs) | API + MCP Inspector | à faire (Phase 6) |
 | Non-régression | suite upstream complète | référence ci-dessus |

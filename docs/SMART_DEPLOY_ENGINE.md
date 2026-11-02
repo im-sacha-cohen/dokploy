@@ -1,11 +1,72 @@
 # Smart Deploy Engine
 
-Code : `packages/server/src/smart-deploy/`. Ce document décrit :
+Code : `packages/server/src/smart-deploy/` (serveur) et `apps/dokploy/components/dashboard/application/smart-deploy/` (UI). Ce document décrit :
+- l'**analyse préalable** (*preflight*) ;
+- le **parcours de déploiement** dans l'interface ;
+- les **corrections** et la façon dont elles sont validées ;
 - le **suivi de version** ;
 - les **actions de déploiement** ;
-- la **vérification post-déploiement** (Phase 4).
+- la **vérification post-déploiement**.
 
-L'analyse préalable (*preflight*) sera ajoutée en Phase 5. Les diagnostics sont documentés dans `DEPLOYMENT_DIAGNOSTICS.md`.
+Les diagnostics sont documentés dans `DEPLOYMENT_DIAGNOSTICS.md`.
+
+## Interface : onglet « Smart Deploy »
+
+Nouvel onglet de la page Application, visible avec le droit `deployment.read`. Les onglets existants (General, Environment, Domains, Deployments, Advanced…) sont inchangés : les réglages avancés restent où ils étaient.
+
+**Carte « Current deployment »** :
+- Status (live) : verdict du diagnostic en direct.
+- Last deployment check : résultat de la vérification faite au déploiement.
+- Branche ; running commit (seulement s'il est prouvé par l'image exacte) ; latest remote commit (« Not verified », avec la raison, si la vérification Git a échoué).
+- Image qui tourne, réplicas, état de version, méthode de correspondance.
+- Actions Deploy latest (marquée *recommended* si la version est dépassée) et Restart.
+- Historique des versions, avec Redeploy / Roll back par ligne. Masqué pour l'image déjà en cours.
+
+**Assistant en 5 étapes** :
+
+| Étape | Contenu |
+|---|---|
+| 1. Source | type, dépôt (sans identifiants), branche ; lien vers General |
+| 2. Configuration | type de build, Dockerfile, domaines et ports, **noms** des variables (jamais les valeurs), healthcheck ; liens vers Environment, Domains, Advanced |
+| 3. Preflight | analyse du dépôt (ci-dessous), puis bouton Deploy latest. La confirmation signale les problèmes bloquants, ou un preflight non lancé |
+| 4. Deployment | timeline réelle (lancé, build, conteneur créé, running, healthy, reachable) rafraîchie toutes les 2 s, avec les logs de build (visionneuse existante) |
+| 5. Result | diagnostic complet : verdict, constats avec preuves, cause, confiance, risque ; bouton « Apply fix » pour les correctifs automatiques ; lien vers l'onglet concerné sinon ; liste de ce qui n'a pas pu être vérifié |
+
+Toute action (deploy, restart, redeploy/rollback, correction) passe par une boîte de confirmation qui décrit le changement exact et son risque.
+
+## Preflight
+
+`smartDeploy.preflight({ applicationId })` (droit lecture) :
+1. Clone superficiel de la branche configurée dans `…/smart-deploy/preflight/<app>-<aléa>`, avec la fonction de clone existante du provider, donc les mêmes identifiants. Le dossier est supprimé à la sortie (`trap … EXIT`), succès ou échec. Pour une source `drop`, c'est le dossier de code existant qui est lu ; pour `docker`, rien n'est analysé.
+2. Lecture des manifestes (taille ≤ 64 Ko) : `package.json`, `requirements.txt`, `pyproject.toml`, `go.mod`, `Gemfile`, `composer.json`, `Procfile`, fichiers Compose, Dockerfile configuré, `.env.example`. **`.env` n'est jamais lu.**
+3. `git grep` des références aux variables d'environnement (Node, Python, Go, Ruby, Rust, PHP) et des lignes d'écoute (`listen(`, `app.run(`, `--host`, routes de santé).
+4. Analyse pure (`preflight/analyze.ts`) : rien n'est construit ni exécuté depuis le dépôt.
+
+Chaque détection porte une **confiance** et sa **source** :
+- **Détections** : langage, framework, gestionnaire de paquets, Dockerfile (EXPOSE, HEALTHCHECK, CMD), Compose (services), commandes de build et de démarrage, ports attendus (EXPOSE, valeur par défaut dans le code, option `--port`/`--bind`, port par défaut du framework), variables référencées, documentées, configurées et manquantes, healthcheck.
+- **Contrôles** :
+  - `BUILD_CONFIGURATION_MISMATCH` : type de build ≠ contenu du dépôt ;
+  - `PORT_MISMATCH` : port du domaine absent des ports attendus ;
+  - `MISSING_ENVIRONMENT_VARIABLE` ;
+  - `APPLICATION_LISTENING_ON_LOCALHOST` : bind 127.0.0.1, ou Flask `app.run()` sans host ;
+  - `NO_HEALTHCHECK` ;
+  - `COMPOSE_PROJECT` ;
+  - `NO_DOMAIN` ;
+  - `SOURCE_UNAVAILABLE`.
+
+Les valeurs de `ENV` du Dockerfile, de `.env.example` et des commandes passent par le *redactor* ; seuls les noms sortent. Mesuré sur les apps de démo : 90 à 250 ms par analyse.
+
+## Corrections : jamais arbitraires
+
+`smartDeploy.applyFix({ applicationId, action })` :
+1. Vérifie le droit correspondant : `domain.create` pour un port, `deployment.create` pour un déploiement.
+2. **Relance un diagnostic** et n'accepte l'action que si un constat *actuel* la propose avec `autoFixable: true`, à l'identique (`findProposedFix`). Une UI, ou plus tard un client MCP, ne peut donc pas soumettre un changement arbitraire.
+3. Applique la correction :
+   - `update_domain_port` : modifie **uniquement** le port du domaine (qui doit appartenir à l'application), puis régénère sa route Traefik ;
+   - `deploy_latest` / `redeploy_deployment` : passe par la file de déploiement.
+4. Écrit une entrée d'audit.
+
+Les variables d'environnement manquantes ne sont **jamais** corrigées automatiquement : les valeurs sont des secrets que seul l'utilisateur connaît. L'UI ouvre l'onglet Environment.
 
 ## Problème corrigé
 

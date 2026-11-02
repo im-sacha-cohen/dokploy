@@ -287,3 +287,25 @@ describe("source description", () => {
 		).toBe(false);
 	});
 });
+
+describe("verdict and version freshness", () => {
+	it("an outdated but working app stays healthy", () => {
+		const running = tracked({});
+		const report = runDiagnostics(
+			context({
+				version: {
+					latest: running,
+					running,
+					remoteHead: {
+						status: "ok",
+						sha: SHA_B,
+						branch: "main",
+						checkedAt: "t",
+					},
+				},
+			}),
+		);
+		expect(report.findings.map((f) => f.code)).toEqual(["GIT_COMMIT_OUTDATED"]);
+		expect(report.verdict).toBe("healthy");
+	});
+});

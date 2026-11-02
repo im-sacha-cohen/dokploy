@@ -9,7 +9,7 @@ API : `smartDeploy.diagnoseApplication` (tRPC, et en REST `GET /api/smartDeploy.
 
 1. **Faits d'abord, règles ensuite.** Un collecteur rassemble des faits (`DiagnosticContext`), puis les règles, des fonctions pures, produisent des constats. Les règles se testent sans Docker.
 2. **Ne jamais conclure sur une donnée absente.** Un fait non collecté reste `undefined`, et la raison est consignée dans `collectionErrors`. Exemple : si les sockets en écoute ne peuvent pas être lus, `PORT_MISMATCH` retombe sur `EXPOSE` avec une confiance `medium` et sans correctif automatique.
-3. **Lecture seule.** Le moteur ne modifie rien. Un correctif proposé (`recommendedFix.action`) est une donnée : son application, prévue en Phase 5, exigera une confirmation explicite.
+3. **Lecture seule.** Le moteur ne modifie rien. Un correctif proposé (`recommendedFix.action`) est une donnée. Il ne peut être appliqué que via `smartDeploy.applyFix`, après confirmation explicite et revalidation par un nouveau diagnostic (voir `SMART_DEPLOY_ENGINE.md`).
 4. **Aucun secret.**
    - Les valeurs des variables d'environnement ne sont jamais renvoyées, seuls les noms le sont.
    - Les logs passent par un *redactor* : les valeurs configurées sont remplacées par `[REDACTED:CLÉ]`.
@@ -50,7 +50,8 @@ Le rapport contient aussi :
 | `APPLICATION_LISTENING_ON_LOCALHOST` | sockets en écoute uniquement sur 127.0.0.1 ou ::1 | high | non |
 | `PORT_MISMATCH` | port du domaine absent des ports en écoute (hors localhost) ; à défaut de sockets, absent des `EXPOSE` (medium) ; port publié dont la cible n'écoute pas | high / medium | **oui**, si un seul port candidat (high) |
 | `REVERSE_PROXY_UNREACHABLE` | sonde Traefik → domaine en 502, 503 ou 504, ou Traefik → service refusé ou injoignable ; ou 404 sur le domaine alors que le service répond (routeur manquant) | high | non |
-| `IMAGE_VERSION_MISMATCH`, `GIT_COMMIT_OUTDATED` | codes réservés : nécessitent le suivi de version (Phase 4) | — | — |
+| `IMAGE_VERSION_MISMATCH` | le dernier déploiement `done` a enregistré une image différente de celle qui tourne (voir `SMART_DEPLOY_ENGINE.md`) | high | oui (`redeploy_deployment`), si l'image est conservée |
+| `GIT_COMMIT_OUTDATED` | le commit exécuté (prouvé par l'image) diffère de la tête distante **vérifiée** ; n'influence pas le verdict de santé | high | oui (`deploy_latest`, risque medium) |
 
 ### Chaînage des causes
 

@@ -76,6 +76,46 @@ Défauts trouvés pendant ces tests et corrigés :
 - « outdated » comptait comme « degraded » ;
 - badge illisible.
 
+## Après la Phase 6 (02/11/2026)
+
+| Mesure | Résultat |
+|---|---|
+| Suite complète | 1630 passés, 7 en échec, 6 ignorés (1643) |
+| Régression trouvée et corrigée | 3 fichiers `__test__/traefik/*` qui mockent `@dokploy/server` en entier ne chargeaient plus le routeur (constante MCP lue au chargement du module). Import déplacé sur le sous-chemin `@dokploy/server/mcp/config` ; ces 3 fichiers passent, ainsi que `remote-stream.test.ts` (timeout sous charge) |
+| Échecs restants | `backup-files.test.ts`, timeouts de 5 s sous charge comme dans la référence ; **14/14 seul** (deux fois) |
+| Typecheck | serveur et app : 0 erreur |
+| Tests smart-deploy + MCP | 67/67 |
+| Bout-en-bout OAuth + MCP réel | `dev/mcp/oauth-mcp-e2e.mjs` : **36/36** |
+
+Couverture du test bout-en-bout réel, sur l'instance locale :
+- **découverte** : 401 avec `resource_metadata`, puis RFC 9728 et RFC 8414 ;
+- **enregistrement et autorisation** : enregistrement dynamique d'un client public, autorisation PKCE, consentement, échange du code, rejeu du code refusé ;
+- **token** : audience `/mcp`, durée de 15 min, scopes consentis uniquement ;
+- **outils** : `tools/list` en 2026-07-28 et via le repli 2025-06-18, puis appels réels (projets, diagnostic de B, application sans valeurs de variables, logs, version) ;
+- **cas refusés** :
+  - scope manquant → 403 `insufficient_scope` ;
+  - entrée invalide refusée ;
+  - application inconnue → même réponse qu'un refus d'accès ;
+  - token falsifié → 401, token aléatoire → 401 ;
+  - Host inconnu → 421, Origin d'un autre site → 403 ;
+  - JSON malformé → erreur sans plantage ;
+- **charge** : 20 requêtes concurrentes ;
+- **cycle de vie** : refresh token, step-up vers `mcp:deploy` puis restart réel, journal d'audit, révocation (token d'accès encore valide refusé immédiatement, refresh refusé), 429 sur des rafales de tokens invalides.
+
+Dans le navigateur intégré :
+- page Settings › AI Integrations et test de connexion (4/4) ;
+- redirection 302 vers le consentement ;
+- consentement réel en ne cochant que `mcp:read` : grant `{mcp:read}`, consentement `{mcp:read, offline_access}`, sans `mcp:deploy` ;
+- redirection vers le client avec `code`, `state` et `iss`.
+
+Reprise après connexion vérifiée : sans session, l'autorisation redirige vers le login avec une requête signée ; la connexion renvoie vers le consentement.
+
+**Non testé** :
+- client distant réel (claude.ai) : nécessite un tunnel public, non mis en place sans accord ;
+- MCP Inspector : non téléchargé ;
+- isolation entre deux utilisateurs ou deux organisations réels (Phase 7) ;
+- interruption client et erreurs Docker : couvertes par le code, pas par un test dédié.
+
 ## Tests manuels de référence (applications de démo)
 
 Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.
@@ -90,6 +130,6 @@ Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonst
 | Version tracking (SHA distant / construit / exécuté, digest) | unitaires + scénario E | ✅ 8 tests unitaires ; scénario E 22/22 en réel |
 | Timeline / statut de vérification | intégration (devbox) + UI | ✅ A–G réels ; timeline UI testée dans le navigateur |
 | Preflight, applyFix, UI | unitaires + navigateur | ✅ 14 tests unitaires ; parcours réels (voir Phase 5) |
-| OAuth (PKCE, audience, expiration, révocation) | API | à faire (Phase 6) |
-| MCP (outils, scopes, isolation projet, injection de logs) | API + MCP Inspector | à faire (Phase 6) |
+| OAuth (PKCE, audience, expiration, révocation) | API + navigateur | ✅ 36/36 en réel (`dev/mcp/oauth-mcp-e2e.mjs`) ; consentement testé dans le navigateur |
+| MCP (outils, scopes, isolation projet, injection de logs) | API | ✅ outils, scopes, refus et redaction en réel ; isolation multi-utilisateurs à faire (Phase 7) ; MCP Inspector non utilisé |
 | Non-régression | suite upstream complète | référence ci-dessus |

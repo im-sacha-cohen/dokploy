@@ -29,7 +29,8 @@ import {
 
 type Application = Awaited<ReturnType<typeof findApplicationById>>;
 
-const SAFE_FILE_PATH = /^[A-Za-z0-9_./-]+$/;
+// Dokploy log names contain ":" (timestamps); paths are single-quoted in shell.
+const SAFE_FILE_PATH = /^[A-Za-z0-9_.:/-]+$/;
 const ENV_EXAMPLE_FILES = [".env.example", ".env.sample", ".env.template"];
 const LOG_TAIL_LINES = 60;
 const BUILD_LOG_TAIL_LINES = 200;

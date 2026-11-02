@@ -10,8 +10,8 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
 | 3 — Diagnostics | ✅ Validé (02/11/2026) | `docs/DEPLOYMENT_DIAGNOSTICS.md`, `smart-deploy/diagnostics`, API `smartDeploy.diagnoseApplication` |
 | 4 — Version tracking | ✅ Validé (02/11/2026) | `docs/SMART_DEPLOY_ENGINE.md`, `smart-deploy/versioning`, migration 0199 |
 | 5 — UI déploiement | ✅ Validé (02/11/2026) | onglet Smart Deploy, `smart-deploy/preflight`, `smart-deploy/actions`, `docs/SMART_DEPLOY_ENGINE.md` |
-| 6 — Serveur MCP + OAuth | 🚧 En cours | — |
-| 7 — Tests finaux | ⬜ | — |
+| 6 — Serveur MCP + OAuth | ✅ Validé (02/11/2026) | `/mcp`, OAuth 2.1 via better-auth, consentement, Settings › AI Integrations, `docs/MCP_ARCHITECTURE.md`, `docs/MCP_SECURITY.md` |
+| 7 — Tests finaux | 🚧 En cours | — |
 
 ## Journal
 
@@ -64,6 +64,27 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
 - Le verdict de santé n'est plus influencé par `GIT_COMMIT_OUTDATED`.
 - Tests : 56 tests unitaires smart-deploy et parcours réels dans le navigateur (voir `TESTING.md`).
 - Langue : l'interface est en anglais comme Dokploy ; les textes générés par le serveur (constats, raisons) sont en français. **À trancher.**
+
+### 02/11/2026 — Phase 6
+- Phase 5 committée en local (`b42b08b`), sans push.
+- Dépendances : `@better-auth/oauth-provider@1.6.23` (serveur et app) et `@modelcontextprotocol/server@2.4.0` (déjà dans le lockfile en transitive). Diff des `package.json` limité à ces lignes.
+- OAuth 2.1 sur l'auth better-auth existante (plugins `oauthProvider` + `jwt`) :
+  - Authorization Code + PKCE, enregistrement dynamique, audience RFC 8707 ;
+  - JWT de 15 min et refresh de 7 jours, `client_credentials` désactivé ;
+  - endpoint `/token` du plugin `jwt` et en-tête JWT de session désactivés.
+- Migration `0200_mcp_oauth` : 5 tables OAuth et 3 tables MCP (réglages, grants, audit).
+- `/mcp` :
+  - transport Streamable HTTP sans état (2026-07-28 et repli 2025) ;
+  - contrôles Host/Origin, Bearer, audience, grant revérifié à chaque requête, rate limiting ;
+  - 19 outils, 2 ressources, audit.
+- Page de consentement : choix de l'organisation, cases réellement appliquées, moindre privilège par défaut. La page de login reprend le flux OAuth après connexion.
+- Settings › AI Integrations : activation, URL, scopes autorisés, test de connexion, clients connectés, révocation, audit.
+- Tests :
+  - `dev/mcp/oauth-mcp-e2e.mjs` : 36/36 en réel ;
+  - consentement réel dans le navigateur, et reprise après login ;
+  - 12 tests unitaires MCP (67 au total dans smart-deploy).
+- Bugs trouvés et corrigés : chemins de logs contenant `:` refusés (affectait aussi `BUILD_FAILED`) ; endpoints RFC 8414 relatifs ; script de test qui écrasait les cookies.
+- Non fait : CIMD, tunnel public pour un client distant, isolation multi-utilisateurs testée en réel (Phase 7).
 
 ## Décisions validées
 - Environnement local : devbox Docker-in-Docker.

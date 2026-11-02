@@ -49,6 +49,7 @@ import { scheduleRouter } from "./routers/schedule";
 import { securityRouter } from "./routers/security";
 import { serverRouter } from "./routers/server";
 import { settingsRouter } from "./routers/settings";
+import { mcpRouter } from "./routers/mcp";
 import { smartDeployRouter } from "./routers/smart-deploy";
 import { sshRouter } from "./routers/ssh-key";
 import { stripeRouter } from "./routers/stripe";
@@ -126,6 +127,7 @@ export const appRouter = createTRPCRouter({
 	overview: overviewRouter,
 	transfer: transferRouter,
 	smartDeploy: smartDeployRouter,
+	mcp: mcpRouter,
 });
 
 // export type definition of API

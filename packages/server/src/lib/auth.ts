@@ -1,5 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import { apiKey } from "@better-auth/api-key";
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { passkey } from "@better-auth/passkey";
 import { scim } from "@better-auth/scim";
 import { sso } from "@better-auth/sso";
@@ -7,11 +8,18 @@ import * as bcrypt from "bcrypt";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { admin, organization, twoFactor } from "better-auth/plugins";
+import { admin, jwt, organization, twoFactor } from "better-auth/plugins";
 import { and, desc, eq } from "drizzle-orm";
 import { IS_CLOUD } from "../constants";
 import { db } from "../db";
 import * as schema from "../db/schema";
+import {
+	ACCESS_TOKEN_TTL_SECONDS,
+	getMcpIssuer,
+	getMcpResourceUrls,
+	OAUTH_SCOPES,
+	REFRESH_TOKEN_TTL_SECONDS,
+} from "../mcp/config";
 import {
 	getTrustedOrigins,
 	getTrustedProviders,
@@ -81,6 +89,9 @@ const createBetterAuth = () =>
 			"/scim/get-provider-connection",
 			"/scim/delete-provider-connection",
 			...(!IS_CLOUD ? ["/verify-email"] : []),
+			// The jwt plugin is only used to sign OAuth access tokens; its
+			// session-to-JWT endpoint stays disabled.
+			"/token",
 		],
 		secret: betterAuthSecret,
 		onAPIError: {
@@ -526,6 +537,28 @@ const createBetterAuth = () =>
 					? { adminUserIds: [process.env.USER_ADMIN_ID as string] }
 					: { adminRoles: [] },
 			),
+			jwt({
+				disableSettingJwtHeader: true,
+				...(getMcpResourceUrls()[0]
+					? { jwt: { issuer: getMcpIssuer(getMcpResourceUrls()[0] as string) } }
+					: {}),
+			}),
+			oauthProvider({
+				loginPage: "/",
+				consentPage: "/oauth/consent",
+				scopes: [...OAUTH_SCOPES],
+				validAudiences: getMcpResourceUrls(),
+				// No client_credentials: every MCP token must belong to a user.
+				grantTypes: ["authorization_code", "refresh_token"],
+				accessTokenExpiresIn: ACCESS_TOKEN_TTL_SECONDS,
+				refreshTokenExpiresIn: REFRESH_TOKEN_TTL_SECONDS,
+				// MCP clients register themselves (RFC 7591) before any user is known.
+				allowDynamicClientRegistration: true,
+				allowUnauthenticatedClientRegistration: true,
+				clientRegistrationDefaultScopes: ["mcp:read"],
+				clientRegistrationAllowedScopes: [...OAUTH_SCOPES],
+				silenceWarnings: { oauthAuthServerConfig: true },
+			}),
 		],
 	});
 
@@ -549,6 +582,8 @@ const _auth = {
 	generateSCIMToken: api.generateSCIMToken,
 	listSCIMProviderConnections: api.listSCIMProviderConnections,
 	deleteSCIMProviderConnection: api.deleteSCIMProviderConnection,
+	getJwks: api.getJwks,
+	getOAuthServerConfig: api.getOAuthServerConfig,
 };
 
 export type AuthType = typeof _auth;

@@ -19,7 +19,17 @@ if (!email || !password) {
 	throw new Error("DEMO_ADMIN_EMAIL / DEMO_ADMIN_PASSWORD missing in dev/.env");
 }
 
+const jar = new Map();
 let cookie = "";
+
+const storeCookies = (res) => {
+	for (const header of res.headers.getSetCookie?.() ?? []) {
+		const [pair] = header.split(";");
+		const name = pair.slice(0, pair.indexOf("="));
+		jar.set(name, pair);
+	}
+	cookie = [...jar.values()].join("; ");
+};
 
 export async function call(path, body, method = "POST") {
 	const res = await fetch(`${baseUrl}${path}`, {
@@ -27,10 +37,7 @@ export async function call(path, body, method = "POST") {
 		headers: { "content-type": "application/json", cookie, origin: baseUrl },
 		body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
 	});
-	const setCookie = res.headers.getSetCookie?.() ?? [];
-	if (setCookie.length) {
-		cookie = setCookie.map((c) => c.split(";")[0]).join("; ");
-	}
+	storeCookies(res);
 	const text = await res.text();
 	if (!res.ok)
 		throw new Error(
@@ -52,4 +59,14 @@ export async function login() {
 		});
 		await call("/api/auth/sign-in/email", { email, password });
 	}
+}
+
+/** GET with the session cookie, without following redirects. */
+export async function rawGet(url) {
+	const res = await fetch(url, {
+		headers: { cookie, origin: baseUrl },
+		redirect: "manual",
+	});
+	storeCookies(res);
+	return res;
 }

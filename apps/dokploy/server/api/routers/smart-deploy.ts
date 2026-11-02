@@ -6,7 +6,6 @@ import {
 	findApplicationById,
 	findDeploymentById,
 	getVersionStatus,
-	IS_CLOUD,
 	restartApplicationService,
 	runPreflight,
 	validateFix,
@@ -19,8 +18,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
-import type { DeploymentJob } from "@/server/queues/queue-types";
-import { myQueue } from "@/server/queues/queueSetup";
+import { enqueueApplicationJob } from "@/server/utils/enqueue-application-job";
 
 const assertSameOrganization = async (
 	applicationId: string,
@@ -49,37 +47,6 @@ const fixActionSchema = z.discriminatedUnion("kind", [
 		deploymentId: z.string().min(1),
 	}),
 ]);
-
-const enqueueApplicationJob = async (
-	application: Awaited<ReturnType<typeof findApplicationById>>,
-	job:
-		| { type: "deploy"; titleLog: string }
-		| { type: "redeploy-version"; sourceDeploymentId: string },
-) => {
-	if (IS_CLOUD) {
-		throw new TRPCError({
-			code: "NOT_IMPLEMENTED",
-			message: "This action is not available on Dokploy Cloud",
-		});
-	}
-	const jobData: DeploymentJob = {
-		applicationId: application.applicationId,
-		titleLog: job.type === "deploy" ? job.titleLog : "Redeploy version",
-		descriptionLog: "",
-		type: job.type,
-		applicationType: "application",
-		server: !!application.serverId,
-		serverId: application.serverId ?? undefined,
-		...(job.type === "redeploy-version"
-			? { sourceDeploymentId: job.sourceDeploymentId }
-			: {}),
-	};
-	await myQueue.add(
-		"deployments",
-		{ ...jobData },
-		{ removeOnComplete: true, removeOnFail: true },
-	);
-};
 
 export const smartDeployRouter = createTRPCRouter({
 	diagnoseApplication: protectedProcedure

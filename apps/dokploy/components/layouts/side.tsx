@@ -29,6 +29,7 @@ import {
 	type LucideIcon,
 	Package,
 	Palette,
+	Plug,
 	ScrollText,
 	Server,
 	ShieldCheck,
@@ -360,6 +361,12 @@ const MENU: Menu = {
 					permissions?.ai.update ||
 					permissions?.ai.delete
 				),
+		},
+		{
+			isSingle: true,
+			title: "AI Integrations",
+			icon: Plug,
+			url: "/dashboard/settings/ai-integrations",
 		},
 		{
 			isSingle: true,

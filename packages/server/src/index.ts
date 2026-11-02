@@ -161,3 +161,4 @@ export * from "./utils/watch-paths/should-deploy";
 export * from "./verification/send-verification-email";
 export * from "./wss/utils";
 export * from "./smart-deploy/index";
+export * from "./mcp/index";

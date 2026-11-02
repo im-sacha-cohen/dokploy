@@ -110,6 +110,17 @@ export default function Home({ IS_CLOUD, enforceSSO }: Props) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.query.error]);
 
+	// When the login was opened by an OAuth authorization (MCP clients), the
+	// OAuth provider answers with the URL that resumes it.
+	const continueAfterLogin = (data: unknown) => {
+		const resume = data as { redirect?: boolean; url?: string } | null;
+		if (resume?.redirect && resume.url) {
+			window.location.href = resume.url;
+			return;
+		}
+		router.push("/dashboard/home");
+	};
+
 	const onSubmit = async (values: LoginForm) => {
 		setIsLoginLoading(true);
 		try {
@@ -142,7 +153,7 @@ export default function Home({ IS_CLOUD, enforceSSO }: Props) {
 			}
 
 			toast.success("Logged in successfully");
-			router.push("/dashboard/home");
+			continueAfterLogin(data);
 		} catch {
 			toast.error("An error occurred while logging in");
 		} finally {
@@ -168,7 +179,7 @@ export default function Home({ IS_CLOUD, enforceSSO }: Props) {
 
 			if (data) {
 				toast.success("Logged in successfully");
-				router.push("/dashboard/home");
+				continueAfterLogin(data);
 			}
 		} catch {
 			toast.error("An error occurred while signing in with passkey");
@@ -191,7 +202,7 @@ export default function Home({ IS_CLOUD, enforceSSO }: Props) {
 
 		setIsTwoFactorLoading(true);
 		try {
-			const { error } = await authClient.twoFactor.verifyTotp({ code });
+			const { data, error } = await authClient.twoFactor.verifyTotp({ code });
 
 			if (error) {
 				toast.error(error.message);
@@ -200,7 +211,7 @@ export default function Home({ IS_CLOUD, enforceSSO }: Props) {
 			}
 
 			toast.success("Logged in successfully");
-			router.push("/dashboard/home");
+			continueAfterLogin(data);
 		} catch {
 			toast.error("An error occurred while verifying 2FA code");
 		} finally {
@@ -217,7 +228,7 @@ export default function Home({ IS_CLOUD, enforceSSO }: Props) {
 
 		setIsBackupCodeLoading(true);
 		try {
-			const { error } = await authClient.twoFactor.verifyBackupCode({
+			const { data, error } = await authClient.twoFactor.verifyBackupCode({
 				code: backupCode.trim(),
 			});
 
@@ -230,7 +241,7 @@ export default function Home({ IS_CLOUD, enforceSSO }: Props) {
 			}
 
 			toast.success("Logged in successfully");
-			router.push("/dashboard/home");
+			continueAfterLogin(data);
 		} catch {
 			toast.error("An error occurred while verifying backup code");
 		} finally {

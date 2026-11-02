@@ -1,4 +1,5 @@
 import { apiKeyClient } from "@better-auth/api-key/client";
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { ssoClient } from "@better-auth/sso/client";
 import {
@@ -28,6 +29,8 @@ export const authClient = createAuthClient({
 		apiKeyClient(),
 		ssoClient(),
 		adminClient(),
+		// Only acts on pages carrying a signed OAuth query (login/consent).
+		oauthProviderClient(),
 		inferAdditionalFields({
 			user: {
 				lastName: {

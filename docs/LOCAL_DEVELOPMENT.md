@@ -83,6 +83,14 @@ Suivi de version : `node dev/demo-apps/version-scenario.mjs` joue le scénario E
 
 Pour le scénario E : `docker exec dokploy-devbox /workspace/dev/demo-apps/e-outdated-push-v2.sh` fait avancer la branche distante sans redéployer.
 
+## Serveur MCP en local
+
+- **URL** : `http://localhost:3000/mcp`, valeur par défaut en développement de `DOKPLOY_MCP_RESOURCE_URL`.
+- **Activation** : Settings › AI Integrations, avec le compte de test.
+- **Test bout-en-bout** : `node dev/mcp/oauth-mcp-e2e.mjs` joue la découverte, l'enregistrement, PKCE, le consentement, les appels d'outils, les cas d'erreur et la révocation.
+- **Client local** : `claude mcp add --transport http dokploy http://localhost:3000/mcp`.
+- **Client distant** (claude.ai par exemple) : il lui faut une URL HTTPS publique, donc un tunnel. Il n'est **pas** mis en place sans ton accord.
+
 ## Incompatibilités macOS et contournements
 
 | Contrainte Dokploy | Situation sur macOS | Solution |

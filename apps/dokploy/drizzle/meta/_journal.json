@@ -1401,6 +1401,13 @@
       "when": 1793618483766,
       "tag": "0199_smart_deploy_version_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1793628287062,
+      "tag": "0200_mcp_oauth",
+      "breakpoints": true
     }
   ]
 }

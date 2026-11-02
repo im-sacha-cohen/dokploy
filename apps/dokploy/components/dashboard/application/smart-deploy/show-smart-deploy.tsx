@@ -1,4 +1,5 @@
 import { Rocket } from "lucide-react";
+import { useRouter } from "next/router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { DialogAction } from "@/components/shared/dialog-action";
@@ -13,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api, type RouterOutputs } from "@/utils/api";
 import { CurrentDeployment } from "./current-deployment";
+import { NetworkChain } from "./network-chain";
 import {
 	ConfigurationStep,
 	PreflightStep,
@@ -37,7 +39,9 @@ export const ShowSmartDeploy = ({ applicationId }: Props) => {
 	const utils = api.useUtils();
 	const { data: application } = api.application.one.useQuery({ applicationId });
 	const { data: permissions } = api.user.getPermissions.useQuery();
-	const [step, setStep] = useState(0);
+	const router = useRouter();
+	// "View diagnosis" in the health banner links here with ?step=result.
+	const [step, setStep] = useState(router.query.step === "result" ? 4 : 0);
 	const [preflight, setPreflight] = useState<
 		RouterOutputs["smartDeploy"]["preflight"] | null
 	>(null);
@@ -87,6 +91,7 @@ export const ShowSmartDeploy = ({ applicationId }: Props) => {
 					void refreshVersion();
 				}}
 			/>
+			<NetworkChain applicationId={applicationId} />
 			<Card className="bg-background">
 				<CardHeader>
 					<CardTitle className="text-xl">Deploy</CardTitle>

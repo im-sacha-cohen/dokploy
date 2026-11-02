@@ -30,6 +30,7 @@ import { ShowDockerLogs } from "@/components/dashboard/application/logs/show";
 import { ShowPatches } from "@/components/dashboard/application/patches/show-patches";
 import { ShowPreviewDeployments } from "@/components/dashboard/application/preview-deployments/show-preview-deployments";
 import { ShowSchedules } from "@/components/dashboard/application/schedules/show-schedules";
+import { HealthBanner } from "@/components/dashboard/application/smart-deploy/health-banner";
 import { ShowSmartDeploy } from "@/components/dashboard/application/smart-deploy/show-smart-deploy";
 import { UpdateApplication } from "@/components/dashboard/application/update-application";
 import { ShowVolumeBackups } from "@/components/dashboard/application/volume-backups/show-volume-backups";
@@ -247,6 +248,11 @@ const Service = (
 										router.push(newPath);
 									}}
 								>
+									{permissions?.deployment.read && (
+										<div className="mb-4">
+											<HealthBanner applicationId={applicationId} />
+										</div>
+									)}
 									<div className="flex flex-row items-center justify-between w-full overflow-auto">
 										<TabsList className="flex gap-8 max-md:gap-4 justify-start">
 											<TabsTrigger value="general">General</TabsTrigger>

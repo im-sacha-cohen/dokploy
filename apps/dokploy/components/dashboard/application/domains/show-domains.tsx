@@ -61,6 +61,8 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { api } from "@/utils/api";
+import { DomainReachabilityBadge } from "../smart-deploy/domain-port-hint";
+import { NetworkChain } from "../smart-deploy/network-chain";
 import { createColumns } from "./columns";
 import { DnsHelperModal } from "./dns-helper-modal";
 import { AddDomain } from "./handle-domain";
@@ -253,6 +255,9 @@ export const ShowDomains = ({ id, type }: Props) => {
 
 	return (
 		<div className="flex w-full flex-col gap-5 ">
+			{type === "application" && (data?.length ?? 0) > 0 && (
+				<NetworkChain applicationId={id} />
+			)}
 			<Card className="bg-background">
 				<CardHeader className="flex flex-row items-center flex-wrap gap-4 justify-between">
 					<div className="flex flex-col gap-1">
@@ -581,6 +586,12 @@ export const ShowDomains = ({ id, type }: Props) => {
 															</TooltipContent>
 														</Tooltip>
 													</TooltipProvider>
+													{type === "application" && (
+														<DomainReachabilityBadge
+															applicationId={id}
+															domainId={item.domainId}
+														/>
+													)}
 
 													<TooltipProvider>
 														<Tooltip>

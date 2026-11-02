@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/card";
 import { api, type RouterOutputs } from "@/utils/api";
 import { ShowRollbackSettings } from "../rollbacks/show-rollback-settings";
+import { DeploymentOutcomeBadge } from "../smart-deploy/badges";
 import { CancelQueues } from "./cancel-queues";
 import { ClearDeployments } from "./clear-deployments";
 import { KillBuild } from "./kill-build";
@@ -300,6 +301,18 @@ export const ShowDeployments = ({
 												status={deployment?.status}
 												className="size-2.5"
 											/>
+											<span className="normal-case">
+												<DeploymentOutcomeBadge
+													status={deployment?.status}
+													verificationStatus={
+														(
+															deployment as {
+																verificationStatus?: string | null;
+															}
+														).verificationStatus
+													}
+												/>
+											</span>
 										</span>
 
 										<div className="flex flex-col gap-1">

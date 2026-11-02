@@ -199,6 +199,7 @@ export interface DiagnosticReport {
 		listening: ListeningSocket[] | null;
 		imageExposedPorts: number[] | null;
 		domains: DomainFact[];
+		publishedPorts: PublishedPortFact[];
 		probes: ProbeResult[];
 	};
 	collectionErrors: DiagnosticContext["collectionErrors"];

@@ -98,6 +98,12 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
 - `dev/demo-apps/api-client.mjs` gère désormais plusieurs sessions et des en-têtes supplémentaires.
 - Bilan et limitations consolidées : `docs/FINAL_REPORT.md`.
 
+### 02/11/2026 — Erreurs et ports mis en évidence (après Phase 7)
+- Bandeau d'état sur tous les onglets de l'application : cause racine et une action principale.
+- Carte « Network path » (onglets Smart Deploy et Domains), badges de joignabilité par domaine, port détecté dans le formulaire de domaine, vrai résultat dans l'onglet Deployments.
+- `diagnostics/presentation.ts` (pur) et 6 tests unitaires (73 au total dans smart-deploy).
+- Vérifié dans le navigateur sur A (sain), B (port), C (crash) et G (localhost).
+
 ## Décisions validées
 - Environnement local : devbox Docker-in-Docker.
 - Images taguées par déploiement (`<app>:<deploymentId>`), conservation des 5 dernières.

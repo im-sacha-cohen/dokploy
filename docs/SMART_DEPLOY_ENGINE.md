@@ -10,6 +10,19 @@ Code : `packages/server/src/smart-deploy/` (serveur) et `apps/dokploy/components
 
 Les diagnostics sont documentés dans `DEPLOYMENT_DIAGNOSTICS.md`.
 
+## Interface : erreurs et ports mis en évidence
+
+Ajoutés après la Phase 7, à ta demande. La logique d'affichage est pure, et testée (`diagnostics/presentation.ts`).
+
+| Où | Quoi |
+|---|---|
+| **Bandeau d'état** au-dessus des onglets de l'application, visible sur **tous** les onglets | Il apparaît si l'app est *down* ou *degraded*. Il affiche une seule cause : la cause racine (`pickRootCause`), pas ses conséquences (on voit « mauvais port », et non « 502 Traefik »). Il propose une action principale : la correction confirmée si elle est automatisable, sinon « Set DATABASE_URL… », qui ouvre l'onglet Environment. Il donne aussi un lien vers le diagnostic complet et un bouton pour revérifier |
+| **Carte « Network path »** dans les onglets Smart Deploy et Domains | Pour chaque domaine : Domaine → Traefik (réponse réelle) → port ciblé → ports réellement en écoute (`0.0.0.0` ou `127.0.0.1`, `EXPOSE`). Chaque maillon est vert, rouge ou « inconnu » (jamais vert sans mesure), avec le bouton de correction du port sur la ligne fautive et les ports publiés sur l'hôte |
+| **Onglet Domains** | Badge par domaine : « Reachable », « Unreachable · wrong port », « app not listening » ou « Not verified ». Dans le formulaire, sous « Container Port » : le port réellement en écoute, une alerte s'il diffère et un bouton « Use 3000 » |
+| **Onglet Deployments** | À côté du « done » d'upstream : « Build OK · App did not start », « Running but unhealthy or unreachable », « Verified healthy »… |
+
+Le bandeau, la carte, les badges et l'aide au port partagent **une seule requête de diagnostic** (cache de 30 s) : afficher la page ne lance pas plusieurs diagnostics. Ajouts dans le code upstream : 35 lignes, sans modifier de ligne existante.
+
 ## Interface : onglet « Smart Deploy »
 
 Nouvel onglet de la page Application, visible avec le droit `deployment.read`. Les onglets existants (General, Environment, Domains, Deployments, Advanced…) sont inchangés : les réglages avancés restent où ils étaient.

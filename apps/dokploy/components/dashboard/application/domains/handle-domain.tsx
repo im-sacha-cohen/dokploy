@@ -46,6 +46,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/utils/api";
+import { DomainPortHint } from "../smart-deploy/domain-port-hint";
 import { COMPOSE_REDEPLOY_TOAST, ComposeRedeployAlert } from "./redeploy-hint";
 
 export type CacheType = "fetch" | "cache";
@@ -662,6 +663,15 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 												<FormControl>
 													<NumberInput placeholder={"3000"} {...field} />
 												</FormControl>
+												{type === "application" && id && (
+													<DomainPortHint
+														applicationId={id}
+														value={field.value ?? undefined}
+														onUse={(port) =>
+															form.setValue("port", port, { shouldDirty: true })
+														}
+													/>
+												)}
 												<FormMessage />
 											</FormItem>
 										);

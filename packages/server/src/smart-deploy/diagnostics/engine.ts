@@ -153,6 +153,7 @@ export const runDiagnostics = (
 			listening: ctx.listening ?? null,
 			imageExposedPorts: ctx.imageExposedPorts ?? null,
 			domains: ctx.config.domains,
+			publishedPorts: ctx.config.publishedPorts,
 			probes: ctx.probes ?? [],
 		},
 		collectionErrors: ctx.collectionErrors,

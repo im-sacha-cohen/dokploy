@@ -83,3 +83,40 @@ export const LiveStatusBadge = ({ verdict }: { verdict: string }) => {
 	const entry = LIVE[verdict] ?? LIVE.unknown;
 	return <Badge variant={entry?.variant}>{entry?.label}</Badge>;
 };
+
+const OUTCOME: Record<
+	string,
+	{ label: string; variant: "green" | "yellow" | "red" | "orange" | "outline" }
+> = {
+	healthy: { label: "Verified healthy", variant: "green" },
+	running: { label: "Running · no healthcheck", variant: "yellow" },
+	degraded: {
+		label: "Running but unhealthy or unreachable",
+		variant: "orange",
+	},
+	failed: { label: "App did not start", variant: "red" },
+	verifying: { label: "Verifying…", variant: "outline" },
+	pending: { label: "Verifying…", variant: "outline" },
+	unknown: { label: "Not verified", variant: "outline" },
+};
+
+/**
+ * What actually happened after a "done" deployment: upstream marks a
+ * deployment done once the build finished, whether or not the app runs.
+ */
+export const DeploymentOutcomeBadge = ({
+	status,
+	verificationStatus,
+}: {
+	status?: string | null;
+	verificationStatus?: string | null;
+}) => {
+	if (!verificationStatus || status === "error" || status === "running")
+		return null;
+	const outcome = OUTCOME[verificationStatus];
+	if (!outcome) return null;
+	if (verificationStatus === "failed" && status === "done") {
+		return <Badge variant="red">Build OK · {outcome.label}</Badge>;
+	}
+	return <Badge variant={outcome.variant}>{outcome.label}</Badge>;
+};

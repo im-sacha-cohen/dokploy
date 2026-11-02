@@ -77,6 +77,8 @@ node dev/demo-apps/seed.mjs --deploy                               # projet + ap
 
 Ce tableau est la référence avant modification : **les 7 déploiements sont marqués `done` alors que 4 applications sont inaccessibles.**
 
+Diagnostic des applications : `node dev/demo-apps/diagnose.mjs [filtre] [--json]` appelle `smartDeploy.diagnoseApplication` sur chaque app du projet de démo (voir `docs/DEPLOYMENT_DIAGNOSTICS.md`).
+
 Pour le scénario E : `docker exec dokploy-devbox /workspace/dev/demo-apps/e-outdated-push-v2.sh` fait avancer la branche distante sans redéployer.
 
 ## Incompatibilités macOS et contournements

@@ -26,6 +26,17 @@ Analyse des 3 échecs :
 
 Toute régression introduite par le fork se mesure contre ce tableau.
 
+## Après la Phase 3 (02/11/2026)
+
+| Mesure | Résultat |
+|---|---|
+| Tests | 1628 passés, 4 en échec, 6 ignorés (1638), dont 34 nouveaux (`__test__/smart-deploy`) |
+| Échecs | les 4 sont dans `backups/backup-files.test.ts` : timeouts de 5 s sous charge, comme dans la référence. Ce fichier **passe** lancé seul (14/14) |
+| Typecheck | `packages/server` et `apps/dokploy` : 0 erreur (l'app nécessite `NODE_OPTIONS=--max-old-space-size=6144` dans le devbox) |
+| Régression | aucune constatée |
+
+Les tests `*.real.test.ts` d'upstream laissent des services `real-*` (0/1) dans le démon Docker **interne** du devbox. Ils sont sans effet sur l'hôte et disparaissent avec `dev-reset.sh`.
+
 ## Tests manuels de référence (applications de démo)
 
 Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.
@@ -36,7 +47,7 @@ Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonst
 
 | Domaine | Type | Statut |
 |---|---|---|
-| Règles de diagnostic (port, crash loop, env, localhost, healthcheck…) | unitaires + scénarios démo B/C/D/G | à faire (Phase 3) |
+| Règles de diagnostic (port, crash loop, env, localhost, healthcheck…) | unitaires + scénarios démo B/C/D/G | ✅ 34 tests unitaires ; scénarios A–G (sauf F, Compose) exécutés en réel via `diagnose.mjs` |
 | Version tracking (SHA distant / construit / exécuté, digest) | unitaires + scénario E | à faire (Phase 4) |
 | Timeline / statut de vérification | intégration (devbox) | à faire (Phase 4-5) |
 | OAuth (PKCE, audience, expiration, révocation) | API | à faire (Phase 6) |

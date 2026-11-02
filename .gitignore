@@ -47,3 +47,8 @@ yarn-error.log*
 
 .playwright-*
 .credentials
+# Local devbox overrides
+dev/.env
+
+# Generated demo Git repositories
+dev/demo-apps/.repos/

@@ -1,0 +1,46 @@
+# Local development stack for macOS (and Linux). See docs/LOCAL_DEVELOPMENT.md.
+# Everything Dokploy creates (Swarm, networks, Traefik, Postgres, deployed apps)
+# lives inside the devbox's own Docker daemon.
+name: dokploy-dev
+
+services:
+  devbox:
+    build:
+      context: dev/devbox
+    image: dokploy-devbox:local
+    container_name: dokploy-devbox
+    hostname: dokploy-devbox
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DEVBOX_AUTOSTART: ${DEVBOX_AUTOSTART:-1}
+      # A clone needing credentials must fail fast instead of waiting on a prompt.
+      GIT_TERMINAL_PROMPT: "0"
+    ports:
+      - "127.0.0.1:${DOKPLOY_DEV_UI_PORT:-3000}:3000"
+      - "127.0.0.1:${DOKPLOY_DEV_HTTP_PORT:-8880}:80"
+      - "127.0.0.1:${DOKPLOY_DEV_HTTPS_PORT:-8443}:443"
+    volumes:
+      - .:/workspace
+      - docker-data:/var/lib/docker
+      - pnpm-store:/pnpm/store
+      # Linux-only artefacts stay off the macOS filesystem (native binaries, speed).
+      - nm-root:/workspace/node_modules
+      - nm-dokploy:/workspace/apps/dokploy/node_modules
+      - nm-api:/workspace/apps/api/node_modules
+      - nm-schedules:/workspace/apps/schedules/node_modules
+      - nm-server:/workspace/packages/server/node_modules
+      - next-cache:/workspace/apps/dokploy/.next
+      # Dokploy BASE_PATH in development (clones, build logs, Traefik dynamic config).
+      - dokploy-data:/workspace/apps/dokploy/.docker
+
+volumes:
+  docker-data:
+  pnpm-store:
+  nm-root:
+  nm-dokploy:
+  nm-api:
+  nm-schedules:
+  nm-server:
+  next-cache:
+  dokploy-data:

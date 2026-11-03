@@ -153,15 +153,15 @@ Full reference: [docs/MCP_ARCHITECTURE.md](docs/MCP_ARCHITECTURE.md).
 ## How it works
 
 ```mermaid
-flowchart LR
-    A[AI client<br/>claude.ai · Claude Code] -- OAuth 2.1 + PKCE --> B[Dokploy auth<br/>better-auth]
-    A -- Bearer token --> C["/mcp<br/>MCP server"]
-    C -- scope ∩ grant ∩ org --> D[Tool]
-    D -- same procedures<br/>and permissions as the UI --> E[Dokploy API]
-    D -- read-only --> F[Smart Deploy engine]
-    F --> G[(Docker · Traefik · logs)]
-    E --> G
-    D -. destructive .-> H{{Human confirmation<br/>in the client}}
+flowchart TB
+    A["AI client<br/>claude.ai · Claude Code"] -->|"1 · OAuth 2.1 + PKCE, consent"| B["Dokploy login<br/>(existing accounts)"]
+    A -->|"2 · Bearer token"| C["/mcp · MCP server"]
+    C -->|"scopes ∩ consent ∩ organization"| D["Tool"]
+    D -->|"same procedures and<br/>permissions as the UI"| E["Dokploy API"]
+    D -->|"read-only"| F["Smart Deploy engine"]
+    D -.->|"delete · stop · restore · exec"| H{{"Human confirmation<br/>in the client"}}
+    E --> G[("Docker · Traefik · logs")]
+    F --> G
 ```
 
 **Effective permission** = token scopes ∩ consented scopes ∩ scopes the

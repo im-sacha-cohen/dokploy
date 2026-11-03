@@ -235,6 +235,15 @@ Environment failures, unrelated to the code:
 
 `dev/phase7/isolation-tests.mjs` now honours `DOKPLOY_MCP_URL`, like the other scripts. Before, it failed as soon as `/mcp` went through a tunnel.
 
+## MCP monitoring tools (2026-11-03)
+
+| Measure | Result |
+|---|---|
+| Unit tests | `mcp-monitoring.test.ts`: CPU and memory computed like `docker stats`, first sample at 0%, series min / avg / max (104/104 in smart-deploy) |
+| Real, `dev/mcp/monitoring-e2e.mjs` | **14/14**: server health (devbox: 4.56/7.65 GB RAM, 12 CPUs, disk 89.9%), Docker disk usage, live stats of app A, clear refusal of the metrics history when monitoring is not set up, unknown server refused, member without the `docker` permission refused |
+
+**Not tested for real:** reading an actual metrics history. It needs the monitoring agent enabled (Settings › Monitoring), which the local devbox does not run.
+
 ## Reference manual tests (demo applications)
 
 See `docs/LOCAL_DEVELOPMENT.md` › *Test account and demo applications*: with the upstream engine, 7 deployments are `done`, 4 of them applications returning 502.

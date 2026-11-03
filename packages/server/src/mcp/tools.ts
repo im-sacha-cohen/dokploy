@@ -48,6 +48,7 @@ import { getEnvironmentVariablesObject } from "../utils/docker/utils";
 import { manageDomain } from "../utils/traefik/domain";
 import { type AuditEntry, writeMcpAudit } from "./audit";
 import { requireConfirmation, verifyConfirmationState } from "./confirm";
+import { registerMonitoringTools } from "./monitoring-tools";
 import { registerPlatformTools } from "./platform-tools";
 import { mutationLimiter } from "./rate-limit";
 import type { McpPrincipal } from "./token";
@@ -258,6 +259,7 @@ export const createDokployMcpServer = (
 	};
 
 	registerPlatformTools({ tool, principal, deps, redact });
+	registerMonitoringTools({ tool, principal, deps, redact });
 
 	const listAccessibleProjects = async () => {
 		const memberRecord = await findMemberByUserId(

@@ -5,6 +5,7 @@ name: Fork image (GHCR)
 on:
   push:
     branches: [feat/smart-deploy-mcp]
+    paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
 
 permissions:

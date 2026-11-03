@@ -65,6 +65,19 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+      # The server bundle keeps npm packages external: a dependency declared
+      # only in packages/server is missing from the image and crashes startup.
+      - name: Smoke test (every import resolves)
+        run: |
+          IMAGE="${{ steps.image.outputs.name }}:smart-deploy-${{ matrix.arch }}"
+          out=$(docker run --rm -e DATABASE_URL=postgres://x:y@127.0.0.1:1/z \
+            --entrypoint sh "$IMAGE" -c 'timeout 20 node dist/server.mjs 2>&1; true')
+          echo "$out" | tail -20
+          if echo "$out" | grep -qE "ERR_MODULE_NOT_FOUND|Cannot find (package|module)"; then
+            echo "::error::A runtime dependency is missing from the image"
+            exit 1
+          fi
+
   manifest:
     needs: build
     runs-on: ubuntu-latest

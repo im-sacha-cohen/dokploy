@@ -45,7 +45,7 @@ service_image() {
 	docker service inspect dokploy --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true
 }
 
-wait_healthy() {
+is_healthy() {
 	log "Waiting for Dokploy to answer on port 3000 (migrations run at startup)…"
 	for _ in $(seq 1 90); do
 		if curl -fs http://127.0.0.1:3000/api/trpc/settings.health >/dev/null 2>&1; then
@@ -54,7 +54,11 @@ wait_healthy() {
 		fi
 		sleep 5
 	done
-	fail "Dokploy did not answer after 7 minutes. Check: docker service logs dokploy --tail 100"
+	return 1
+}
+
+wait_healthy() {
+	is_healthy || fail "Dokploy did not answer after 7 minutes. Check: docker service logs dokploy --tail 100"
 }
 
 mkdir -p "$STATE_DIR"
@@ -109,8 +113,15 @@ if [ -n "$DOMAIN" ]; then
 	UPDATE_ARGS+=(--env-add "DOKPLOY_MCP_RESOURCE_URL=https://$DOMAIN/mcp")
 fi
 log "Switching the dokploy service to the fork"
-docker service update "${UPDATE_ARGS[@]}" dokploy >/dev/null
-wait_healthy
+if ! docker service update "${UPDATE_ARGS[@]}" dokploy >/dev/null || ! is_healthy; then
+	log "The fork did not start. Last logs:"
+	docker service logs dokploy --tail 40 2>&1 | tail -40 || true
+	ROLLBACK_TO="$(cat "$PREVIOUS_FILE" 2>/dev/null || printf '%s' "$CURRENT")"
+	log "Going back to $ROLLBACK_TO"
+	docker service update --image "$ROLLBACK_TO" --env-rm DOKPLOY_MCP_RESOURCE_URL dokploy >/dev/null || true
+	is_healthy || true
+	fail "Installation aborted, Dokploy runs $ROLLBACK_TO again. Database backup: $STATE_DIR"
+fi
 
 log "Done. Dokploy runs $IMAGE."
 if [ -n "$DOMAIN" ]; then

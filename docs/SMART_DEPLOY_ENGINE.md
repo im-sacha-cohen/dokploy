@@ -205,16 +205,15 @@ The first attempt, for G, only reported the consequence: the final diagnostic ra
 - **Webhooks**: the pushed SHA is not used yet. `requestedCommitSha` is the branch head read at deployment time.
 - **Dokploy Cloud**: `redeployVersion` is refused (upstream's remote execution path does not know this job type).
 
-## Compose et bases de données (03/11/2026)
+## Compose stacks and databases (2026-11-03)
 
-Smart Deploy est disponible sur tous les types de services :
-- **bandeau d'état** au-dessus des onglets ;
-- **onglet Smart Deploy** :
-  - constats, chacun avec son service pour les compose ;
-  - correctifs confirmés ;
-  - table des services d'un stack ;
-  - carte réseau domaine → service → port ;
-  - faits d'une base : image configurée et image en cours, port interne en écoute, port externe publié.
+Smart Deploy is available on every service type:
+- a **status banner** above the tabs;
+- a **Smart Deploy tab**:
+  - findings, each with its service for compose stacks;
+  - confirmed fixes;
+  - the services table of a stack;
+  - the network path domain → service → port;
+  - database facts: configured and running image, internal port listening, external port published.
 
-Les applications gardent en plus l'assistant, le préflight, la timeline et le suivi de version par commit. Détails des règles et de la collecte : `DEPLOYMENT_DIAGNOSTICS.md`.
-
+Applications additionally keep the wizard, the preflight, the timeline and commit-level version tracking. Rules and collection details: `DEPLOYMENT_DIAGNOSTICS.md`.

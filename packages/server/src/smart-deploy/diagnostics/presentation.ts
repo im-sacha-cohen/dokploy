@@ -154,15 +154,25 @@ const containerHop = (
 
 /** One chain per domain: entry → Traefik → domain port → container. */
 export const buildNetworkChains = (report: DiagnosticReport): DomainChain[] => {
-	const listening = report.facts.listening;
-	const reachablePorts = listening
-		? new Set(
-				listening.filter((s) => !isLoopback(s.address)).map((s) => s.port),
-			)
-		: null;
-	const container = containerHop(listening, report.facts.imageExposedPorts);
-
 	return report.facts.domains.map((domain) => {
+		// Compose stacks: the domain's own service holds the listening facts.
+		const service = report.facts.services?.find(
+			(s) => s.name === domain.serviceName,
+		);
+		const listening = report.facts.services
+			? (service?.listening ?? null)
+			: report.facts.listening;
+		const reachablePorts = listening
+			? new Set(
+					listening.filter((s) => !isLoopback(s.address)).map((s) => s.port),
+				)
+			: null;
+		const container = containerHop(
+			listening,
+			report.facts.services
+				? (service?.imageExposedPorts ?? null)
+				: report.facts.imageExposedPorts,
+		);
 		const router = report.facts.probes.find(
 			(p) => p.kind === "router" && p.domainId === domain.domainId,
 		);

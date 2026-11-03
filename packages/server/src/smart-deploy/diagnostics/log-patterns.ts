@@ -18,6 +18,8 @@ const ENV_SINGLE_PATTERNS: RegExp[] = [
 		`\\b(${ENV_NAME}) (?:env(?:ironment)? var(?:iable)? )?(?:is (?:not set|not defined|required|missing|undefined)|must be (?:set|defined|provided))\\b`,
 	),
 	new RegExp(`KeyError: ['"](${ENV_NAME})['"]`),
+	// Official database images (postgres, mysql, mariadb).
+	new RegExp(`You (?:must|need to) specify (${ENV_NAME})\\b`),
 	new RegExp(`os\\.environ\\[['"](${ENV_NAME})['"]\\]`),
 	new RegExp(
 		`(?:\\$\\{?)?\\b(${ENV_NAME})\\}?: (?:parameter null or not set|unbound variable)`,
@@ -103,27 +105,27 @@ export const parseExitCode = (error?: string): number | undefined => {
 export const describeExitCode = (code: number): string => {
 	switch (code) {
 		case 1:
-			return "erreur générique de l'application (exception non gérée, configuration invalide…)";
+			return "generic application error (unhandled exception, invalid configuration…)";
 		case 2:
-			return "mauvaise utilisation de la commande (arguments invalides)";
+			return "command misuse (invalid arguments)";
 		case 78:
-			return "erreur de configuration (EX_CONFIG), souvent une variable d'environnement manquante ou invalide";
+			return "configuration error (EX_CONFIG), often a missing or invalid environment variable";
 		case 126:
-			return "commande de démarrage non exécutable (permissions)";
+			return "start command not executable (permissions)";
 		case 127:
-			return "commande de démarrage introuvable dans l'image";
+			return "start command not found in the image";
 		case 134:
-			return "arrêt anormal (SIGABRT)";
+			return "abnormal termination (SIGABRT)";
 		case 137:
-			return "processus tué (SIGKILL), souvent un dépassement de mémoire (OOM)";
+			return "process killed (SIGKILL), often out of memory (OOM)";
 		case 139:
-			return "erreur de segmentation (SIGSEGV)";
+			return "segmentation fault (SIGSEGV)";
 		case 143:
-			return "arrêt demandé (SIGTERM)";
+			return "termination requested (SIGTERM)";
 		default:
 			return code > 128
-				? `processus terminé par le signal ${code - 128}`
-				: `code de sortie ${code}`;
+				? `process terminated by signal ${code - 128}`
+				: `exit code ${code}`;
 	}
 };
 
@@ -133,4 +135,30 @@ const BUILD_ERROR_LINE =
 export const selectBuildErrorLines = (lines: string[], max = 12): string[] => {
 	const relevant = lines.filter((line) => BUILD_ERROR_LINE.test(line));
 	return (relevant.length > 0 ? relevant : lines).slice(-max);
+};
+
+const IMAGE_PULL_ERROR =
+	/no such image|manifest unknown|manifest for .+ not found|pull access denied|repository does not exist|failed to resolve reference|not found: manifest/i;
+export const isImagePullError = (text: string | undefined) =>
+	!!text && IMAGE_PULL_ERROR.test(text);
+
+const PORT_IN_USE =
+	/port is already allocated|address already in use|bind: address already in use|port .* is already in use/i;
+export const isPortInUseError = (text: string | undefined) =>
+	!!text && PORT_IN_USE.test(text);
+
+export const DISK_FULL = /no space left on device|disk quota exceeded/i;
+
+/** Log lines saying the data volume was written by another engine version. */
+export const DATA_INCOMPATIBLE: Record<string, RegExp> = {
+	postgres:
+		/database files are incompatible with server|initialized by PG_VERSION|was initialized by PostgreSQL version/i,
+	mysql:
+		/Cannot boot server version .* on data directory built by version|Cannot upgrade server earlier than|Unknown redo log format|InnoDB: Upgrade after a crash is not supported/i,
+	mariadb:
+		/InnoDB: Upgrade after a crash is not supported|Unknown redo log format|Invalid MySQL server downgrade|Cannot boot server version/i,
+	mongo:
+		/UPGRADE PROBLEM|Wrong mongod version|too recent to start up on the existing data files|Invalid featureCompatibilityVersion document|unsupported WiredTiger file version/i,
+	redis:
+		/Can't handle RDB format version|Bad file format reading the append only file/i,
 };

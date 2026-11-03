@@ -11,7 +11,7 @@ run() {
 	local log
 	log="$(mktemp)"
 	if "$@" >"$log" 2>&1; then status="OK"; else status="FAILED"; fi
-	printf '%-28s %-7s %s\n' "$name" "$status" "$(grep -E 'vérifications réussies' "$log" | tail -1)"
+	printf '%-28s %-7s %s\n' "$name" "$status" "$(grep -E 'checks passed' "$log" | tail -1)"
 	[ "$status" = "FAILED" ] && grep -E '❌' "$log" | head -10
 	rm -f "$log"
 }

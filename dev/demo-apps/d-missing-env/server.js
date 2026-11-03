@@ -3,7 +3,9 @@ const http = require("node:http");
 const required = ["DATABASE_URL", "SESSION_SECRET"];
 const missing = required.filter((name) => !process.env[name]);
 if (missing.length > 0) {
-	console.error(`Missing required environment variable(s): ${missing.join(", ")}`);
+	console.error(
+		`Missing required environment variable(s): ${missing.join(", ")}`,
+	);
 	process.exit(78);
 }
 

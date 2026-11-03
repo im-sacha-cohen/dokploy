@@ -20,6 +20,8 @@ import { ShowEnvironment } from "@/components/dashboard/application/environment/
 import { ShowIconSettings } from "@/components/dashboard/application/icon/show-icon-settings";
 import { ShowPatches } from "@/components/dashboard/application/patches/show-patches";
 import { ShowSchedules } from "@/components/dashboard/application/schedules/show-schedules";
+import { ServiceHealthBanner } from "@/components/dashboard/application/smart-deploy/service-health-banner";
+import { ShowServiceSmartDeploy } from "@/components/dashboard/application/smart-deploy/show-service-smart-deploy";
 import { ShowVolumeBackups } from "@/components/dashboard/application/volume-backups/show-volume-backups";
 import { AddCommandCompose } from "@/components/dashboard/compose/advanced/add-command";
 import { IsolatedDeploymentTab } from "@/components/dashboard/compose/advanced/add-isolation";
@@ -67,7 +69,8 @@ type TabState =
 	| "domains"
 	| "containers"
 	| "monitoring"
-	| "volumeBackups";
+	| "volumeBackups"
+	| "smart-deploy";
 
 const Service = (
 	props: InferGetServerSidePropsType<typeof getServerSideProps>,
@@ -237,9 +240,22 @@ const Service = (
 										router.push(newPath);
 									}}
 								>
+									{permissions?.deployment.read && (
+										<div className="mb-4">
+											<ServiceHealthBanner
+												serviceType="compose"
+												serviceId={composeId}
+											/>
+										</div>
+									)}
 									<div className="flex flex-row items-center w-full overflow-auto">
 										<TabsList className="flex gap-8 max-md:gap-4 justify-start">
 											<TabsTrigger value="general">General</TabsTrigger>
+											{permissions?.deployment.read && (
+												<TabsTrigger value="smart-deploy">
+													Smart Deploy
+												</TabsTrigger>
+											)}
 											{permissions?.envVars.read && (
 												<TabsTrigger value="environment">
 													Environment
@@ -285,6 +301,14 @@ const Service = (
 										</TabsList>
 									</div>
 
+									{permissions?.deployment.read && (
+										<TabsContent value="smart-deploy" className="w-full pt-2.5">
+											<ShowServiceSmartDeploy
+												serviceType="compose"
+												serviceId={composeId}
+											/>
+										</TabsContent>
+									)}
 									<TabsContent value="general">
 										<div className="flex flex-col gap-4 pt-2.5">
 											<ShowGeneralCompose composeId={composeId} />

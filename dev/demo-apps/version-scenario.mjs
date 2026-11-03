@@ -88,30 +88,30 @@ const d1 = await runAction(applicationId, "deploy latest #1", () =>
 	call("/api/application.deploy", { applicationId }),
 );
 check(
-	"1. deploy latest enregistre kind=deploy_latest",
+	"1. deploy latest records kind=deploy_latest",
 	d1.kind === "deploy_latest",
 );
 check(
-	"1. commit demandé = récupéré = construit",
+	"1. requested = fetched = built commit",
 	!!d1.requestedCommitSha &&
 		d1.requestedCommitSha === d1.fetchedCommitSha &&
 		d1.fetchedCommitSha === d1.builtCommitSha,
 	d1.builtCommitSha,
 );
 check(
-	"1. image taguée par déploiement",
+	"1. image tagged per deployment",
 	d1.imageTag?.endsWith(`:dpl-${d1.deploymentId}`),
 	d1.imageTag,
 );
 check(
-	"1. vérification healthy",
+	"1. verification healthy",
 	d1.verificationStatus === "healthy",
 	JSON.stringify(d1.verification?.stages),
 );
 const v1Body = (await fetchApp(domain)).body;
 let status = await get("smartDeploy.getVersionStatus", { applicationId });
 check(
-	"1. statut de version up_to_date (image exacte)",
+	"1. version status up_to_date (exact image)",
 	status.versionState === "up_to_date" && status.currentMatch === "image_match",
 	status.versionReason,
 );
@@ -127,19 +127,19 @@ const pushed = execFileSync("docker", [
 console.log(`   ${pushed}`);
 status = await get("smartDeploy.getVersionStatus", { applicationId });
 check(
-	"2. après push : outdated, commit distant vérifié",
+	"2. after push: outdated, remote commit verified",
 	status.versionState === "outdated" &&
 		status.latestRemote.status === "ok" &&
 		status.latestRemote.sha !== d1.builtCommitSha,
 	status.versionReason,
 );
 check(
-	"2. action recommandée deploy_latest",
+	"2. recommended action deploy_latest",
 	status.recommendedAction === "deploy_latest",
 );
 const diag = await get("smartDeploy.diagnoseApplication", { applicationId });
 check(
-	"2. diagnostic GIT_COMMIT_OUTDATED",
+	"2. diagnosis GIT_COMMIT_OUTDATED",
 	diag.findings.some((f) => f.code === "GIT_COMMIT_OUTDATED"),
 	diag.findings.map((f) => f.code).join(", "),
 );
@@ -150,19 +150,19 @@ const d3 = await runAction(applicationId, "deploy latest #2", () =>
 	call("/api/application.deploy", { applicationId }),
 );
 check(
-	"3. nouveau commit construit = commit distant",
+	"3. new built commit = remote commit",
 	d3.builtCommitSha === remoteSha,
 );
-check("3. nouvelle image", d3.imageId && d3.imageId !== d1.imageId);
+check("3. new image", d3.imageId && d3.imageId !== d1.imageId);
 const v2Body = (await fetchApp(domain)).body;
 check(
-	"3. l'application sert la nouvelle version",
+	"3. the application serves the new version",
 	v2Body !== v1Body,
 	`${v1Body} → ${v2Body}`,
 );
 status = await get("smartDeploy.getVersionStatus", { applicationId });
 check(
-	"3. statut up_to_date",
+	"3. status up_to_date",
 	status.versionState === "up_to_date",
 	status.versionReason,
 );
@@ -172,23 +172,23 @@ const d4 = await runAction(applicationId, "rollback", () =>
 	call("/api/smartDeploy.redeployVersion", { deploymentId: d1.deploymentId }),
 );
 check(
-	"4. kind=rollback, source = déploiement 1",
+	"4. kind=rollback, source = deployment 1",
 	d4.kind === "rollback" && d4.sourceDeploymentId === d1.deploymentId,
 );
-check("4. aucune récupération Git", d4.fetchedCommitSha === null);
-check("4. même image que le déploiement 1", d4.imageId === d1.imageId);
+check("4. no Git fetch", d4.fetchedCommitSha === null);
+check("4. same image as deployment 1", d4.imageId === d1.imageId);
 check(
-	"4. image réellement exécutée = image 1",
+	"4. image actually running = image 1",
 	d4.runningImageId === d1.imageId,
 	d4.runningImageId,
 );
 check(
-	"4. l'application sert l'ancienne version",
+	"4. the application serves the old version",
 	(await fetchApp(domain)).body === v1Body,
 );
 status = await get("smartDeploy.getVersionStatus", { applicationId });
 check(
-	"4. statut outdated après rollback",
+	"4. status outdated after rollback",
 	status.versionState === "outdated" &&
 		status.current?.deploymentId === d4.deploymentId,
 	status.versionReason,
@@ -199,27 +199,27 @@ const d5 = await runAction(applicationId, "restart", () =>
 	call("/api/smartDeploy.restartApplication", { applicationId }),
 );
 check(
-	"5. kind=restart, même image",
+	"5. kind=restart, same image",
 	d5.kind === "restart" && d5.runningImageId === d1.imageId,
 );
-check("5. version servie inchangée", (await fetchApp(domain)).body === v1Body);
+check("5. served version unchanged", (await fetchApp(domain)).body === v1Body);
 
 // 6. Rebuild: rebuilds the code directory without fetching
 const d6 = await runAction(applicationId, "rebuild", () =>
 	call("/api/application.redeploy", { applicationId }),
 );
 check(
-	"6. kind=rebuild, aucune récupération Git",
+	"6. kind=rebuild, no Git fetch",
 	d6.kind === "rebuild" && d6.fetchedCommitSha === null,
 );
 check(
-	"6. commit construit explicite (dossier de code = dernier clone)",
+	"6. explicit built commit (code directory = last clone)",
 	d6.builtCommitSha === remoteSha,
 	d6.builtCommitSha,
 );
 
 const failed = results.filter((r) => !r.ok);
 console.log(
-	`\n${results.length - failed.length}/${results.length} vérifications réussies`,
+	`\n${results.length - failed.length}/${results.length} checks passed`,
 );
 process.exitCode = failed.length ? 1 : 0;

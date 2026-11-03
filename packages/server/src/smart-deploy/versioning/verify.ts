@@ -108,9 +108,7 @@ export const verifyDeployment = async (
 
 	while (true) {
 		if (await isSuperseded(applicationId, row.createdAt)) {
-			v.notes.push(
-				"Vérification interrompue : un déploiement plus récent a démarré.",
-			);
+			v.notes.push("Verification interrupted: a newer deployment started.");
 			break;
 		}
 
@@ -151,7 +149,7 @@ export const verifyDeployment = async (
 			v.stages.containerRunning = {
 				status: "failed",
 				at: nowIso(),
-				detail: `${failed.length} tâches en échec (${last})`,
+				detail: `${failed.length} failed tasks (${last})`,
 			};
 			break;
 		}
@@ -181,7 +179,7 @@ export const verifyDeployment = async (
 			if (!health) {
 				v.stages.healthy = {
 					status: "not_applicable",
-					detail: "aucun healthcheck défini (image ou Swarm)",
+					detail: "no healthcheck defined (image or Swarm)",
 				};
 			} else if (health === "healthy") {
 				v.stages.healthy = { status: "passed", at: nowIso() };
@@ -198,7 +196,7 @@ export const verifyDeployment = async (
 				v.stages.containerRunning = {
 					status: "passed",
 					at: nowIso(),
-					detail: `tâche ${running.ID?.slice(0, 12)}`,
+					detail: `task ${running.ID?.slice(0, 12)}`,
 				};
 				break;
 			}
@@ -213,8 +211,8 @@ export const verifyDeployment = async (
 				status: "failed",
 				at: nowIso(),
 				detail: running
-					? "healthcheck toujours en démarrage à l'échéance"
-					: "aucun conteneur en cours d'exécution à l'échéance",
+					? "healthcheck still starting at the deadline"
+					: "no container running at the deadline",
 			};
 			break;
 		}
@@ -233,7 +231,7 @@ export const verifyDeployment = async (
 	if (v.stages.containerRunning.status !== "passed") {
 		v.stages.reachable = { status: "skipped" };
 	} else if (application.domains.length === 0) {
-		v.stages.reachable = { status: "not_applicable", detail: "aucun domaine" };
+		v.stages.reachable = { status: "not_applicable", detail: "no domain" };
 	}
 
 	// Give the listening-socket rules their grace period so the final report

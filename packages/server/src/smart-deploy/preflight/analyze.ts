@@ -117,7 +117,7 @@ const detectLanguage = (snapshot: RepositorySnapshot) => {
 		);
 		if (sources.length) {
 			return detection(language, "low", [
-				`${sources.slice(0, 3).join(", ")} (sans fichier manifeste)`,
+				`${sources.slice(0, 3).join(", ")} (no manifest file)`,
 			]);
 		}
 	}
@@ -152,7 +152,7 @@ const detectFramework = (snapshot: RepositorySnapshot) => {
 		);
 		if (match) {
 			return {
-				framework: detection(match[1], "high", ["dépendances Python"]),
+				framework: detection(match[1], "high", ["Python dependencies"]),
 				defaultPort: match[2],
 			};
 		}
@@ -194,7 +194,7 @@ const detectPackageManager = (snapshot: RepositorySnapshot) => {
 	const found = lockfiles.find(([file]) => has(snapshot, file));
 	if (found) return detection(found[1], "high", [found[0]]);
 	if (has(snapshot, "package.json")) {
-		return detection("npm", "low", ["package.json sans lockfile"]);
+		return detection("npm", "low", ["package.json without lockfile"]);
 	}
 	return null;
 };
@@ -381,7 +381,7 @@ export const analyzeSnapshot = (
 			evidence: `${config.dockerfilePath} › EXPOSE ${port}`,
 		});
 	}
-	ports.push(...portsFromCommand(startCommand?.value, "commande de démarrage"));
+	ports.push(...portsFromCommand(startCommand?.value, "start command"));
 	for (const line of snapshot.listenLines) {
 		const fallback = line.match(/PORT\s*(?:\|\||\?\?|,)\s*['"]?(\d{2,5})/)?.[1];
 		const literal = line.match(/\.listen\(\s*(\d{2,5})\b/)?.[1];
@@ -400,7 +400,7 @@ export const analyzeSnapshot = (
 			port: defaultPort,
 			source: "framework_default",
 			confidence: "medium",
-			evidence: `port par défaut de ${framework.value}`,
+			evidence: `default port of ${framework.value}`,
 		});
 	}
 	const uniquePorts = ports.filter(
@@ -429,10 +429,10 @@ export const analyzeSnapshot = (
 			code: "MISSING_ENVIRONMENT_VARIABLE",
 			severity: documentedMissing.length ? "warning" : "info",
 			confidence: documentedMissing.length ? "medium" : "low",
-			title: `${missing.length} variable(s) d'environnement non définie(s)`,
-			detail: `Utilisées par le code ou documentées, absentes de la configuration : ${missing.join(", ")}.`,
+			title: `${missing.length} environment variable(s) not defined`,
+			detail: `Used by the code or documented, but missing from the configuration: ${missing.join(", ")}.`,
 			recommendation:
-				"Les définir dans l'onglet Environment si elles n'ont pas de valeur par défaut dans le code.",
+				"Define them in the Environment tab if the code has no default value for them.",
 		});
 	}
 
@@ -440,9 +440,9 @@ export const analyzeSnapshot = (
 		/['"`]\/(?:api\/)?(?:health|healthz|status)['"`]/.test(l),
 	);
 	const healthcheck = parsedDockerfile?.healthcheck
-		? detection("HEALTHCHECK du Dockerfile", "high", [config.dockerfilePath])
+		? detection("Dockerfile HEALTHCHECK", "high", [config.dockerfilePath])
 		: config.swarmHealthcheck
-			? detection("Healthcheck Swarm configuré dans Dokploy", "high", [
+			? detection("Swarm healthcheck configured in Dokploy", "high", [
 					"Advanced › Swarm",
 				])
 			: null;
@@ -451,12 +451,12 @@ export const analyzeSnapshot = (
 			code: "NO_HEALTHCHECK",
 			severity: "info",
 			confidence: "high",
-			title: "Aucun healthcheck",
+			title: "No healthcheck",
 			detail: healthRoute
-				? `Une route de santé existe dans le code (${healthRoute.trim().slice(0, 100)}) mais aucun healthcheck n'est configuré.`
-				: "Sans healthcheck, Dokploy peut vérifier que le conteneur tourne et répond, pas qu'il est sain.",
+				? `A health route exists in the code (${healthRoute.trim().slice(0, 100)}) but no healthcheck is configured.`
+				: "Without a healthcheck, Dokploy can check that the container runs and responds, not that it is healthy.",
 			recommendation:
-				"Ajouter un HEALTHCHECK au Dockerfile ou un healthcheck Swarm (Advanced) qui interroge une route de santé.",
+				"Add a HEALTHCHECK to the Dockerfile or a Swarm healthcheck (Advanced) that queries a health route.",
 		});
 	}
 
@@ -468,10 +468,10 @@ export const analyzeSnapshot = (
 			code: "APPLICATION_LISTENING_ON_LOCALHOST",
 			severity: "warning",
 			confidence: "medium",
-			title: "Le code semble écouter sur localhost",
-			detail: `Ligne trouvée : ${(localhostLine ?? startCommand?.value ?? "").trim().slice(0, 160)}. Une application liée à 127.0.0.1 n'est pas joignable par Traefik.`,
+			title: "Code seems to listen on localhost",
+			detail: `Line found: ${(localhostLine ?? startCommand?.value ?? "").trim().slice(0, 160)}. An application bound to 127.0.0.1 is not reachable by Traefik.`,
 			recommendation:
-				"Écouter sur 0.0.0.0 (ou rendre l'hôte configurable via une variable).",
+				"Listen on 0.0.0.0 (or make the host configurable through a variable).",
 		});
 	} else if (
 		framework?.value === "Flask" &&
@@ -482,11 +482,11 @@ export const analyzeSnapshot = (
 			code: "APPLICATION_LISTENING_ON_LOCALHOST",
 			severity: "warning",
 			confidence: "medium",
-			title: "Flask écoute sur 127.0.0.1 par défaut",
+			title: "Flask listens on 127.0.0.1 by default",
 			detail:
-				"app.run() est appelé sans host : le serveur ne sera pas joignable depuis Traefik.",
+				"app.run() is called without host: the server will not be reachable from Traefik.",
 			recommendation:
-				'Utiliser app.run(host="0.0.0.0") ou un serveur WSGI (gunicorn --bind 0.0.0.0:PORT).',
+				'Use app.run(host="0.0.0.0") or a WSGI server (gunicorn --bind 0.0.0.0:PORT).',
 		});
 	}
 
@@ -495,19 +495,19 @@ export const analyzeSnapshot = (
 			code: "BUILD_CONFIGURATION_MISMATCH",
 			severity: "error",
 			confidence: "high",
-			title: "Dockerfile introuvable",
-			detail: `Le type de build est « dockerfile » mais ${config.dockerfilePath} n'existe pas dans ${config.buildPath || "/"}.`,
+			title: "Dockerfile not found",
+			detail: `The build type is "dockerfile" but ${config.dockerfilePath} does not exist in ${config.buildPath || "/"}.`,
 			recommendation:
-				"Corriger le chemin du Dockerfile ou choisir un autre type de build (Nixpacks, Railpack).",
+				"Fix the Dockerfile path or choose another build type (Nixpacks, Railpack).",
 		});
 	} else if (config.buildType !== "dockerfile" && dockerfile) {
 		checks.push({
 			code: "BUILD_CONFIGURATION_MISMATCH",
 			severity: "info",
 			confidence: "medium",
-			title: "Un Dockerfile existe mais n'est pas utilisé",
-			detail: `Le dépôt contient ${config.dockerfilePath}, le type de build est « ${config.buildType} ».`,
-			recommendation: "Vérifier que le type de build est le bon.",
+			title: "A Dockerfile exists but is not used",
+			detail: `The repository contains ${config.dockerfilePath}, the build type is "${config.buildType}".`,
+			recommendation: "Check that the build type is the right one.",
 		});
 	}
 
@@ -516,10 +516,9 @@ export const analyzeSnapshot = (
 			code: "COMPOSE_PROJECT",
 			severity: "warning",
 			confidence: "medium",
-			title: "Projet Docker Compose",
-			detail: `${compose.value.file} décrit ${compose.value.services.length} service(s) (${compose.value.services.join(", ")}).`,
-			recommendation:
-				"Créer un service de type Compose plutôt qu'une Application.",
+			title: "Docker Compose project",
+			detail: `${compose.value.file} describes ${compose.value.services.length} service(s) (${compose.value.services.join(", ")}).`,
+			recommendation: "Create a Compose service rather than an Application.",
 		});
 	}
 
@@ -528,9 +527,9 @@ export const analyzeSnapshot = (
 			code: "NO_DOMAIN",
 			severity: "info",
 			confidence: "high",
-			title: "Aucun domaine",
-			detail: "L'application ne sera pas exposée via Traefik.",
-			recommendation: "Ajouter un domaine si l'application sert du HTTP.",
+			title: "No domain",
+			detail: "The application will not be exposed through Traefik.",
+			recommendation: "Add a domain if the application serves HTTP.",
 		});
 	}
 
@@ -551,9 +550,9 @@ export const analyzeSnapshot = (
 			code: "PORT_MISMATCH",
 			severity: "warning",
 			confidence: strongPorts.length ? "high" : "medium",
-			title: `Le domaine ${domain.host} cible le port ${domain.port}`,
-			detail: `Ports attendus d'après le dépôt : ${knownPorts.join(", ")}.`,
-			recommendation: `Régler le port du domaine sur ${knownPorts[0]} si c'est le port HTTP de l'application.`,
+			title: `Domain ${domain.host} targets port ${domain.port}`,
+			detail: `Ports expected from the repository: ${knownPorts.join(", ")}.`,
+			recommendation: `Set the domain port to ${knownPorts[0]} if it is the application's HTTP port.`,
 		});
 	}
 

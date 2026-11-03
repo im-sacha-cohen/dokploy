@@ -426,6 +426,7 @@ const FindingCard = ({
 						{finding.autoFixable &&
 							action &&
 							action.kind !== "set_environment_variables" &&
+							action.kind !== "redeploy_service" &&
 							canFix && (
 								<DialogAction
 									type="default"
@@ -501,6 +502,7 @@ export const ResultStep = ({
 				The application does not serve traffic.
 			</AlertBlock>
 		),
+		stopped: <AlertBlock type="info">The application is stopped.</AlertBlock>,
 		unknown: (
 			<AlertBlock type="info">
 				Not enough facts to conclude (see what could not be checked below).

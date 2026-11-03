@@ -26,7 +26,9 @@ http
 		const redis = await pingRedis();
 		if (req.url === "/health") {
 			res.writeHead(redis ? 200 : 503, { "content-type": "application/json" });
-			return res.end(JSON.stringify({ status: redis ? "ok" : "degraded", redis }));
+			return res.end(
+				JSON.stringify({ status: redis ? "ok" : "degraded", redis }),
+			);
 		}
 		res.end(`f-compose web (redis: ${redis ? "up" : "down"})\n`);
 	})

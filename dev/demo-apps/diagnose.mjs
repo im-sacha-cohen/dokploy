@@ -31,16 +31,16 @@ for (const app of apps) {
 	console.log(`\n${app.name}  →  ${report.verdict.toUpperCase()}`);
 	for (const f of report.findings) {
 		const fix = f.autoFixable
-			? "  [fix auto possible, confirmation requise]"
+			? "  [auto-fix possible, confirmation required]"
 			: "";
 		const cause = f.causedBy
-			? `  (conséquence de ${f.causedBy.join(", ")})`
+			? `  (caused by ${f.causedBy.join(", ")})`
 			: "";
 		console.log(
 			`  - ${f.code} [${f.severity}/${f.confidence}] ${f.title}${cause}${fix}`,
 		);
 	}
 	for (const e of report.collectionErrors) {
-		console.log(`  ! non collecté (${e.source}) : ${e.message}`);
+		console.log(`  ! not collected (${e.source}): ${e.message}`);
 	}
 }

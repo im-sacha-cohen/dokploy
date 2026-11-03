@@ -173,7 +173,7 @@ describe("diagnostics engine — demo scenarios", () => {
 			(f) => f.code === "CONTAINER_CRASH_LOOP",
 		);
 		expect(crash?.severity).toBe("critical");
-		expect(crash?.probableCause).toContain("1 :");
+		expect(crash?.probableCause).toContain("1: ");
 		expect(crash?.evidence.some((e) => e.source === "application_logs")).toBe(
 			true,
 		);
@@ -370,7 +370,11 @@ describe("diagnostics engine — rule details", () => {
 			(f) => f.code === "CONTAINER_CRASH_LOOP",
 		);
 		expect(crash?.severity).toBe("warning");
-		expect(crash?.probableCause).toContain("OOM");
+		// Exit 137 is reported as its own cause, which explains the restarts.
+		expect(crash?.causedBy).toEqual(["OUT_OF_MEMORY"]);
+		expect(
+			report.findings.find((f) => f.code === "OUT_OF_MEMORY")?.confidence,
+		).toBe("medium");
 	});
 
 	it("ignores failures older than the crash window", () => {
@@ -412,7 +416,7 @@ describe("diagnostics engine — rule details", () => {
 		const proxy = report.findings.find(
 			(f) => f.code === "REVERSE_PROXY_UNREACHABLE",
 		);
-		expect(proxy?.title).toContain("ne route pas");
+		expect(proxy?.title).toContain("does not route");
 		expect(proxy?.causedBy).toBeUndefined();
 	});
 

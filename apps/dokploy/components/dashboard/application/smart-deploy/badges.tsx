@@ -76,6 +76,7 @@ const LIVE: Record<
 	healthy: { label: "Healthy", variant: "green" },
 	degraded: { label: "Degraded", variant: "orange" },
 	down: { label: "Down", variant: "red" },
+	stopped: { label: "Stopped", variant: "outline" },
 	unknown: { label: "Unknown", variant: "outline" },
 };
 

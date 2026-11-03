@@ -1,225 +1,255 @@
 # Tests
 
-Framework existant : **Vitest 4** (`apps/dokploy/__test__`, config `__test__/vitest.config.ts`). La base de données est mockée (`__test__/setup.ts`), sauf dans les tests `*.real.test.ts`, qui exécutent Docker et Git pour de vrai.
+Existing framework: **Vitest 4** (`apps/dokploy/__test__`, config `__test__/vitest.config.ts`). The database is mocked (`__test__/setup.ts`), except in `*.real.test.ts` tests, which run Docker and Git for real.
 
 ```bash
-./scripts/dev-test.sh                    # suite complète dans le devbox
-./scripts/dev-test.sh __test__/deploy    # un dossier ou un fichier
+./scripts/dev-test.sh                    # full suite in the devbox
+./scripts/dev-test.sh __test__/deploy    # a folder or a file
 ```
 
-Les tests tournent **sans TTY** et avec `GIT_TERMINAL_PROMPT=0`. Sinon, un `git clone` vers un dépôt inexistant reste bloqué sur une demande d'identifiants (constaté sur `application.real.test.ts`).
+Tests run **without a TTY** and with `GIT_TERMINAL_PROMPT=0`. Otherwise, a `git clone` to a nonexistent repository stays blocked on a credentials prompt (seen on `application.real.test.ts`).
 
-## Référence avant modification (upstream `46a0762`, 02/11/2026, devbox arm64)
+## Baseline before changes (upstream `46a0762`, 2026-11-02, devbox arm64)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Fichiers de test | 166 passés, 2 en échec, 1 ignoré (169) |
-| Tests | 1595 passés, 3 en échec, 6 ignorés (1604) |
-| Durée | ~400 s |
+| Test files | 166 passed, 2 failed, 1 skipped (169) |
+| Tests | 1595 passed, 3 failed, 6 skipped (1604) |
+| Duration | ~400 s |
 
-Analyse des 3 échecs :
+Analysis of the 3 failures:
 
-| Test | Cause | Statut après analyse |
+| Test | Cause | Status after analysis |
 |---|---|---|
-| `backups/backup-files.test.ts` › `getBackupServerId`, `resolveBackupAccess` | Timeout Vitest de 5 s dépassé pendant l'import, sous la charge de la suite complète | **Passent** lancés seuls (14/14). Instabilité de charge, aucun lien avec le fork |
-| `deploy/application.real.test.ts` › *REAL git clone errors* | Le premier lancement utilisait un TTY, et git attendait un identifiant | **Passe** sans TTY (5 passés, 1 ignoré) ; `dev-test.sh` est corrigé |
+| `backups/backup-files.test.ts` › `getBackupServerId`, `resolveBackupAccess` | Vitest's 5 s timeout exceeded during import, under the load of the full suite | **Pass** when run alone (14/14). Load-related flakiness, unrelated to the fork |
+| `deploy/application.real.test.ts` › *REAL git clone errors* | The first run used a TTY, and git was waiting for credentials | **Passes** without a TTY (5 passed, 1 skipped); `dev-test.sh` is fixed |
 
-Toute régression introduite par le fork se mesure contre ce tableau.
+Any regression introduced by the fork is measured against this table.
 
-## Après la Phase 3 (02/11/2026)
+## After Phase 3 (2026-11-02)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Tests | 1628 passés, 4 en échec, 6 ignorés (1638), dont 34 nouveaux (`__test__/smart-deploy`) |
-| Échecs | les 4 sont dans `backups/backup-files.test.ts` : timeouts de 5 s sous charge, comme dans la référence. Ce fichier **passe** lancé seul (14/14) |
-| Typecheck | `packages/server` et `apps/dokploy` : 0 erreur (l'app nécessite `NODE_OPTIONS=--max-old-space-size=6144` dans le devbox) |
-| Régression | aucune constatée |
+| Tests | 1628 passed, 4 failed, 6 skipped (1638), including 34 new ones (`__test__/smart-deploy`) |
+| Failures | all 4 are in `backups/backup-files.test.ts`: 5 s timeouts under load, as in the baseline. This file **passes** when run alone (14/14) |
+| Typecheck | `packages/server` and `apps/dokploy`: 0 errors (the app needs `NODE_OPTIONS=--max-old-space-size=6144` in the devbox) |
+| Regression | none observed |
 
-Les tests `*.real.test.ts` d'upstream laissent des services `real-*` (0/1) dans le démon Docker **interne** du devbox. Ils sont sans effet sur l'hôte et disparaissent avec `dev-reset.sh`.
+Upstream's `*.real.test.ts` tests leave `real-*` services (0/1) in the devbox's **internal** Docker daemon. They have no effect on the host and go away with `dev-reset.sh`.
 
-## Après la Phase 4 (02/11/2026)
+## After Phase 4 (2026-11-02)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Tests | 1635 passés, 5 en échec, 6 ignorés (1646), dont 42 dans `__test__/smart-deploy` |
-| Échecs | 4 dans `backup-files.test.ts` : timeouts sous charge, comme dans la référence ; **passe seul** (14/14). 1 dans `application.real.test.ts` (build nixpacks réel, timeout de 180 s sous charge) ; **passe seul** |
-| Typecheck | serveur et app : 0 erreur |
-| Scénario E réel | `version-scenario.mjs` : 22/22 |
-| Vérification réelle A, B, C, D, G | healthy, degraded, failed, failed, degraded |
+| Tests | 1635 passed, 5 failed, 6 skipped (1646), including 42 in `__test__/smart-deploy` |
+| Failures | 4 in `backup-files.test.ts`: timeouts under load, as in the baseline; **passes alone** (14/14). 1 in `application.real.test.ts` (real nixpacks build, 180 s timeout under load); **passes alone** |
+| Typecheck | server and app: 0 errors |
+| Real scenario E | `version-scenario.mjs`: 22/22 |
+| Real verification A, B, C, D, G | healthy, degraded, failed, failed, degraded |
 
-Régressions trouvées puis corrigées pendant la phase. Le premier passage de la suite complète a révélé :
-- `application.command.test.ts` (2 tests) : `deployApplication` exécutait un `git ls-remote` avant la commande de build. La lecture du commit demandé a été déplacée dans la file de déploiement.
-- `application.real.test.ts` (Dockerfile) : le tag `<app>:dpl-…` dupliquait la ligne de `docker images <app>`. Les images conservées vivent désormais dans un dépôt séparé, `dokploy-versions/<app>`.
+Regressions found and fixed during the phase. The first run of the full suite revealed:
+- `application.command.test.ts` (2 tests): `deployApplication` ran a `git ls-remote` before the build command. Reading the requested commit was moved into the deployment queue.
+- `application.real.test.ts` (Dockerfile): the `<app>:dpl-…` tag duplicated the `docker images <app>` line. Retained images now live in a separate repository, `dokploy-versions/<app>`.
 
-## Après la Phase 5 (02/11/2026)
+## After Phase 5 (2026-11-02)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Tests | 1648 passés, 6 en échec, 6 ignorés (1660), dont 56 dans `__test__/smart-deploy` |
-| Échecs | 4 dans `backup-files.test.ts`, timeouts sous charge (passe seul, 14/14). 2 dans `application.real.test.ts` (clone réel nixpacks et submodules, en échec sous charge ; passe seul, 5 passés + 1 ignoré) |
-| Typecheck | serveur et app : 0 erreur |
-| Preflight réel | A–G : clone temporaire supprimé, 90 à 250 ms. Constats attendus : port 80 pour B, `DATABASE_URL`/`SESSION_SECRET` pour D, localhost pour G |
+| Tests | 1648 passed, 6 failed, 6 skipped (1660), including 56 in `__test__/smart-deploy` |
+| Failures | 4 in `backup-files.test.ts`, timeouts under load (passes alone, 14/14). 2 in `application.real.test.ts` (real nixpacks clone and submodules, failing under load; passes alone, 5 passed + 1 skipped) |
+| Typecheck | server and app: 0 errors |
+| Real preflight | A–G: temporary clone deleted, 90 to 250 ms. Expected findings: port 80 for B, `DATABASE_URL`/`SESSION_SECRET` for D, localhost for G |
 
-Parcours UI testé dans le navigateur intégré (instance locale, compte de test) :
+UI flows tested in the built-in browser (local instance, test account):
 
-| Parcours | Résultat |
+| Flow | Result |
 |---|---|
-| Onglet Smart Deploy sur B : carte de version, preflight, diagnostic | données réelles affichées, constats PORT_MISMATCH et REVERSE_PROXY_UNREACHABLE |
-| B : « Apply fix » (port 80 → 3000) avec confirmation | appliqué, diagnostic « running and reachable », `curl` via Traefik 200 (502 avant). Port 80 remis ensuite pour garder le scénario |
-| A : Deploy latest depuis l'étape 3, puis timeline | 6 étapes observées jusqu'à « reachable », historique rafraîchi automatiquement |
-| E : « Roll back » depuis l'historique | version `be8f6bb` exécutée, statut « Outdated », Deploy latest recommandé |
+| Smart Deploy tab on B: version card, preflight, diagnostic | real data displayed, PORT_MISMATCH and REVERSE_PROXY_UNREACHABLE findings |
+| B: "Apply fix" (port 80 → 3000) with confirmation | applied, diagnostic "running and reachable", `curl` through Traefik 200 (502 before). Port 80 restored afterwards to keep the scenario |
+| A: Deploy latest from step 3, then timeline | 6 steps observed through to "reachable", history refreshed automatically |
+| E: "Roll back" from the history | version `be8f6bb` running, status "Outdated", Deploy latest recommended |
 
-Défauts trouvés pendant ces tests et corrigés :
-- statut figé au résultat du déploiement → statut *live* ajouté ;
-- historique non rafraîchi après la timeline ;
-- Roll back proposé vers l'image déjà en cours ;
-- « outdated » comptait comme « degraded » ;
-- badge illisible.
+Defects found during these tests and fixed:
+- status frozen at the deployment result → *live* status added;
+- history not refreshed after the timeline;
+- Roll back offered to the image already running;
+- "outdated" counted as "degraded";
+- unreadable badge.
 
-## Après la Phase 6 (02/11/2026)
+## After Phase 6 (2026-11-02)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Suite complète | 1630 passés, 7 en échec, 6 ignorés (1643) |
-| Régression trouvée et corrigée | 3 fichiers `__test__/traefik/*` qui mockent `@dokploy/server` en entier ne chargeaient plus le routeur (constante MCP lue au chargement du module). Import déplacé sur le sous-chemin `@dokploy/server/mcp/config` ; ces 3 fichiers passent, ainsi que `remote-stream.test.ts` (timeout sous charge) |
-| Échecs restants | `backup-files.test.ts`, timeouts de 5 s sous charge comme dans la référence ; **14/14 seul** (deux fois) |
-| Typecheck | serveur et app : 0 erreur |
-| Tests smart-deploy + MCP | 67/67 |
-| Bout-en-bout OAuth + MCP réel | `dev/mcp/oauth-mcp-e2e.mjs` : **36/36** |
+| Full suite | 1630 passed, 7 failed, 6 skipped (1643) |
+| Regression found and fixed | 3 `__test__/traefik/*` files that mock `@dokploy/server` entirely no longer loaded the router (MCP constant read at module load). Import moved to the `@dokploy/server/mcp/config` subpath; these 3 files pass, as does `remote-stream.test.ts` (timeout under load) |
+| Remaining failures | `backup-files.test.ts`, 5 s timeouts under load as in the baseline; **14/14 alone** (twice) |
+| Typecheck | server and app: 0 errors |
+| Smart-deploy + MCP tests | 67/67 |
+| Real end-to-end OAuth + MCP | `dev/mcp/oauth-mcp-e2e.mjs`: **36/36** |
 
-Couverture du test bout-en-bout réel, sur l'instance locale :
-- **découverte** : 401 avec `resource_metadata`, puis RFC 9728 et RFC 8414 ;
-- **enregistrement et autorisation** : enregistrement dynamique d'un client public, autorisation PKCE, consentement, échange du code, rejeu du code refusé ;
-- **token** : audience `/mcp`, durée de 15 min, scopes consentis uniquement ;
-- **outils** : `tools/list` en 2026-07-28 et via le repli 2025-06-18, puis appels réels (projets, diagnostic de B, application sans valeurs de variables, logs, version) ;
-- **cas refusés** :
-  - scope manquant → 403 `insufficient_scope` ;
-  - entrée invalide refusée ;
-  - application inconnue → même réponse qu'un refus d'accès ;
-  - token falsifié → 401, token aléatoire → 401 ;
-  - Host inconnu → 421, Origin d'un autre site → 403 ;
-  - JSON malformé → erreur sans plantage ;
-- **charge** : 20 requêtes concurrentes ;
-- **cycle de vie** : refresh token, step-up vers `mcp:deploy` puis restart réel, journal d'audit, révocation (token d'accès encore valide refusé immédiatement, refresh refusé), 429 sur des rafales de tokens invalides.
+Coverage of the real end-to-end test, on the local instance:
+- **discovery**: 401 with `resource_metadata`, then RFC 9728 and RFC 8414;
+- **registration and authorization**: dynamic registration of a public client, PKCE authorization, consent, code exchange, code replay rejected;
+- **token**: `/mcp` audience, 15 min lifetime, only the consented scopes;
+- **tools**: `tools/list` in 2026-07-28 and via the 2025-06-18 fallback, then real calls (projects, diagnostic of B, application without variable values, logs, version);
+- **rejected cases**:
+  - missing scope → 403 `insufficient_scope`;
+  - invalid input rejected;
+  - unknown application → same response as an access denial;
+  - forged token → 401, random token → 401;
+  - unknown Host → 421, Origin from another site → 403;
+  - malformed JSON → error without crashing;
+- **load**: 20 concurrent requests;
+- **lifecycle**: refresh token, step-up to `mcp:deploy` then a real restart, audit log, revocation (still-valid access token rejected immediately, refresh rejected), 429 on bursts of invalid tokens.
 
-Dans le navigateur intégré :
-- page Settings › AI Integrations et test de connexion (4/4) ;
-- redirection 302 vers le consentement ;
-- consentement réel en ne cochant que `mcp:read` : grant `{mcp:read}`, consentement `{mcp:read, offline_access}`, sans `mcp:deploy` ;
-- redirection vers le client avec `code`, `state` et `iss`.
+In the built-in browser:
+- Settings › AI Integrations page and connection test (4/4);
+- 302 redirect to consent;
+- real consent with only `mcp:read` checked: grant `{mcp:read}`, consent `{mcp:read, offline_access}`, without `mcp:deploy`;
+- redirect to the client with `code`, `state` and `iss`.
 
-Reprise après connexion vérifiée : sans session, l'autorisation redirige vers le login avec une requête signée ; la connexion renvoie vers le consentement.
+Resume after login verified: without a session, authorization redirects to the login with a signed request; signing in sends back to consent.
 
-**Non testé** :
-- client distant réel (claude.ai) : nécessite un tunnel public, non mis en place sans accord ;
-- MCP Inspector : non téléchargé ;
-- isolation entre deux utilisateurs ou deux organisations réels (Phase 7) ;
-- interruption client et erreurs Docker : couvertes par le code, pas par un test dédié.
+**Not tested**:
+- real remote client (claude.ai): requires a public tunnel, not set up without approval;
+- MCP Inspector: not downloaded;
+- isolation between two real users or organizations (Phase 7);
+- client interruption and Docker errors: covered by the code, not by a dedicated test.
 
-## Phase 7 — tests finaux (02/11/2026)
+## Phase 7 — final tests (2026-11-02)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Suite complète | **1661 passés**, 4 en échec, 6 ignorés (1671) |
-| Échecs | les 4 timeouts de `backup-files.test.ts` sous charge, déjà présents dans la référence upstream ; 14/14 lancé seul |
-| Permissions et isolation réelles | `dev/phase7/isolation-tests.mjs` : **27/27** |
-| Tous les scénarios | `dev/phase7/run-all.sh` : diagnostics A–G (A et E sains ; B, C, D et G en panne avec leur cause), version E 22/22, isolation 27/27, OAuth + MCP 36/36 |
-| Stabilité | après `docker restart` du devbox, `run-all.sh` entièrement OK, puis OAuth + MCP rejoué 3 fois de suite (36/36 à chaque fois) |
+| Full suite | **1661 passed**, 4 failed, 6 skipped (1671) |
+| Failures | the 4 `backup-files.test.ts` timeouts under load, already present in the upstream baseline; 14/14 when run alone |
+| Real permissions and isolation | `dev/phase7/isolation-tests.mjs`: **27/27** |
+| All scenarios | `dev/phase7/run-all.sh`: diagnostics A–G (A and E healthy; B, C, D and G failing with their cause), version E 22/22, isolation 27/27, OAuth + MCP 36/36 |
+| Stability | after `docker restart` of the devbox, `run-all.sh` fully OK, then OAuth + MCP replayed 3 times in a row (36/36 each time) |
 
-`isolation-tests.mjs` utilise un vrai membre restreint (invitation, inscription, accès limité aux apps A, B et E), une 2e organisation et un projet non accordé. Il vérifie que :
-- l'UI et MCP montrent exactement les mêmes apps à ce membre ;
-- tout objet non accordé est refusé (projet non accordé, autre organisation, app non accordée du même projet), en diagnostic comme en action ;
-- un token émis pour l'organisation A ne donne pas accès à l'organisation B, même pour le propriétaire ;
-- impossible d'accorder un client pour une organisation où MCP est désactivé, ou dont on n'est pas membre ;
-- retirer un scope dans l'organisation donne 403 immédiat, et désactiver l'intégration donne 401 immédiat ;
-- un membre ne voit que ses propres clients et son propre audit, et ne peut pas révoquer ceux des autres, alors qu'un admin le peut, avec effet immédiat.
+`isolation-tests.mjs` uses a real restricted member (invitation, sign-up, access limited to apps A, B and E), a second organization and an ungranted project. It checks that:
+- the UI and MCP show exactly the same apps to this member;
+- any ungranted object is refused (ungranted project, other organization, ungranted app in the same project), for diagnostics as well as actions;
+- a token issued for organization A does not give access to organization B, even for the owner;
+- it is impossible to grant a client for an organization where MCP is disabled, or of which one is not a member;
+- removing a scope in the organization gives an immediate 403, and disabling the integration gives an immediate 401;
+- a member only sees their own clients and their own audit entries, and cannot revoke others', whereas an admin can, with immediate effect.
 
-## MCP « tout faire » (03/11/2026)
+## "Do everything" MCP (2026-11-03)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Tests unitaires smart-deploy | **80/80** (dont `mcp-confirm.test.ts` : confirmation, état falsifié, autre client, autres arguments, client sans elicitation, liste blanche d'API, scopes par défaut) |
-| Scénario complet en réel | `dev/mcp/platform-e2e.mjs` : **59/59** |
-| OAuth + MCP existant | `dev/mcp/oauth-mcp-e2e.mjs` : 36/36 (après mutualisation des helpers dans `dev/mcp/mcp-client.mjs`) |
-| Tous les scénarios Phase 7 | `dev/phase7/run-all.sh` : diagnostics A–G OK, version E 22/22, isolation 27/27, OAuth + MCP 36/36 |
-| Suite complète | **1677 passés**, 1 en échec, 6 ignorés (1684) ; l'échec est le timeout connu de `backup-files.test.ts` sous charge (14/14 lancé seul) |
+| Smart-deploy unit tests | **80/80** (including `mcp-confirm.test.ts`: confirmation, forged state, other client, other arguments, client without elicitation, API allowlist, default scopes) |
+| Full real scenario | `dev/mcp/platform-e2e.mjs`: **59/59** |
+| Existing OAuth + MCP | `dev/mcp/oauth-mcp-e2e.mjs`: 36/36 (after factoring the helpers into `dev/mcp/mcp-client.mjs`) |
+| All Phase 7 scenarios | `dev/phase7/run-all.sh`: diagnostics A–G OK, version E 22/22, isolation 27/27, OAuth + MCP 36/36 |
+| Full suite | **1677 passed**, 1 failed, 6 skipped (1684); the failure is the known `backup-files.test.ts` timeout under load (14/14 when run alone) |
 
-`platform-e2e.mjs` fait tout passer par MCP, dans un projet jetable supprimé à la fin :
-- scopes `env`/`manage`/`exec` non accordés tant que l'organisation ne les autorise pas (403) ;
-- création de projet, d'environnement, d'application (image Docker), de Postgres et d'un compose ;
-- variables : secret masqué à la lecture, placeholder masqué refusé à l'écriture, suppression sans toucher aux autres ;
-- réglages, domaine créé puis servi par Traefik (HTTP 200), déploiement, logs d'application et de compose ;
-- commande dans le conteneur Postgres :
-  - refus clair pour un client sans elicitation ;
-  - question contenant la commande exacte ;
-  - refus utilisateur sans exécution ;
-  - état falsifié rejeté (`-32602`) ;
-  - état réutilisé pour une autre commande ou absent : nouvelle question ;
-  - exécution confirmée, mot de passe de la base masqué dans la sortie ;
-  - code de sortie et stderr d'une commande en échec ;
-- arrêt (confirmé) puis démarrage, suppression de domaine confirmée (le nom d'hôte figure dans la question) ;
-- membre restreint : ne voit pas le projet, refus sur les variables, la suppression et la commande, **avant** toute confirmation ;
-- limite de 10 mutations/min atteinte puis respectée ; audit avec `confirmation_requested`, `declined` et `ok`, sans secret ;
-- suppression confirmée des services, de l'environnement et du projet.
+`platform-e2e.mjs` runs everything through MCP, in a throwaway project deleted at the end:
+- `env`/`manage`/`exec` scopes not granted until the organization allows them (403);
+- creating a project, an environment, an application (Docker image), a Postgres and a compose;
+- variables: secret masked on read, masked placeholder rejected on write, deletion without touching the others;
+- settings, a domain created then served by Traefik (HTTP 200), deployment, application and compose logs;
+- command in the Postgres container:
+  - clear refusal for a client without elicitation;
+  - question containing the exact command;
+  - user refusal without execution;
+  - forged state rejected (`-32602`);
+  - state reused for another command, or missing: new question;
+  - confirmed execution, database password masked in the output;
+  - exit code and stderr of a failing command;
+- stop (confirmed) then start, confirmed domain deletion (the hostname appears in the question);
+- restricted member: does not see the project, refused on variables, deletion and command, **before** any confirmation;
+- limit of 10 mutations/min reached then respected; audit with `confirmation_requested`, `declined` and `ok`, without secrets;
+- confirmed deletion of the services, the environment and the project.
 
-Incidents pendant les essais, sans lien avec le code :
-- **Docker Desktop arrêté** en cours de run, probablement faute de mémoire : le typecheck complet de l'app ne tient pas à côté du serveur de dev dans le devbox. Lancer `tsc` juste après un redémarrage du devbox.
-- **Au redémarrage, le setup Traefik d'upstream échouait** (`could not add service state for endpoint dokploy-traefik-previous`) : endpoint réseau périmé dans le Docker interne. Correctif : `docker exec dokploy-devbox docker rm -f dokploy-traefik`, puis `docker restart dokploy-devbox` (le setup recrée Traefik).
-- **Mise en veille du Mac** pendant un run : l'état de confirmation (5 min) puis le token d'accès (15 min) ont expiré, et ont été correctement refusés. Lancer les e2e longs sous `caffeinate -dims`.
+Incidents during the runs, unrelated to the code:
+- **Docker Desktop stopped** mid-run, probably from lack of memory: the app's full typecheck does not fit alongside the dev server in the devbox. Run `tsc` right after a devbox restart.
+- **On restart, upstream's Traefik setup failed** (`could not add service state for endpoint dokploy-traefik-previous`): stale network endpoint in the internal Docker. Fix: `docker exec dokploy-devbox docker rm -f dokploy-traefik`, then `docker restart dokploy-devbox` (the setup recreates Traefik).
+- **Mac went to sleep** during a run: the confirmation state (5 min) then the access token (15 min) expired, and were correctly rejected. Run long e2e tests under `caffeinate -dims`.
 
-Non testé en réel :
-- `run_backup`, `list_backup_files` et `restore_backup` : pas de destination S3 dans l'environnement local ;
-- `set_application_source` en Git et en GitHub, `set_build_type` : seule la source image Docker a été jouée ;
-- `cancel_deployment` ;
-- un client MCP du commerce avec elicitation (Claude Code…) : le flux a été joué par le client de test, qui suit le protocole 2026-07-28.
+Not tested for real:
+- `run_backup`, `list_backup_files` and `restore_backup`: no S3 destination in the local environment;
+- `set_application_source` with Git and GitHub, `set_build_type`: only the Docker image source was exercised;
+- `cancel_deployment`;
+- a commercially available MCP client with elicitation (Claude Code, etc.): the flow was played by the test client, which follows protocol 2026-07-28.
 
-## Domaine + enregistrement DNS depuis le formulaire (03/11/2026)
+## Domain + DNS record from the form (2026-11-03)
 
-| Mesure | Résultat |
+| Measure | Result |
 |---|---|
-| Tests unitaires (`domain-dns.test.ts`) | labels (accents, longueur), noms qualifiés, suggestion qui saute les noms pris, réutilisation d'un nom pointant déjà ici, conflits A/AAAA/CNAME, TXT/MX ignorés, classement des IP ; smart-deploy + traefik : **227/227** |
-| Typecheck | serveur et app sans erreur |
-| Navigateur, zone réelle `sacha-cohen.fr` (lecture seule) | suggestion `a-healthy.sacha-cohen.fr` disponible ; `www` signalé comme pris (CNAME existant) ; `bad_name` refusé ; Host rempli automatiquement |
-| API sans écriture | nom pris → **409** ; IP étrangère au serveur → **400** ; 0 domaine et 0 enregistrement créés (46 enregistrements avant et après) |
-| Création et suppression réelles | `dev/dns/domain-dns-e2e.mjs` (UI + MCP) : **non lancé**, en attente d'une zone de test autorisée |
+| Unit tests (`domain-dns.test.ts`) | labels (accents, length), qualified names, suggestion that skips taken names, reuse of a name already pointing here, A/AAAA/CNAME conflicts, TXT/MX ignored, IP ranking; smart-deploy + traefik: **227/227** |
+| Typecheck | server and app without errors |
+| Browser, real zone `sacha-cohen.fr` (read-only) | suggestion `a-healthy.sacha-cohen.fr` available; `www` flagged as taken (existing CNAME); `bad_name` rejected; Host filled in automatically |
+| API without writes | taken name → **409**; IP foreign to the server → **400**; 0 domains and 0 records created (46 records before and after) |
+| Real creation and deletion | `dev/dns/domain-dns-e2e.mjs` (UI + MCP): **not run**, waiting for an authorized test zone |
 
-`domain-dns-e2e.mjs` refuse de tourner sans `DNS_E2E_ZONE` et `DNS_E2E_CONFIRM=yes`. Il n'utilise que des noms `dokploy-e2e-*` absents au départ, et vérifie à la fin qu'il n'en reste aucun.
+`domain-dns-e2e.mjs` refuses to run without `DNS_E2E_ZONE` and `DNS_E2E_CONFIRM=yes`. It only uses `dokploy-e2e-*` names that are absent at the start, and checks at the end that none remain.
 
-## MCP : déploiements, Smart Deploy et logs (03/11/2026)
+## MCP: deployments, Smart Deploy and logs (2026-11-03)
 
-`dev/mcp/deployments-e2e.mjs` : **24/24** en réel, via le tunnel :
-- déploiements, statut et logs de build d'une application et d'un compose ;
-- timeline Smart Deploy (6 étapes) ; refus explicite pour un compose ;
-- logs d'exécution ;
-- préflight ;
-- diagnostic de B, puis application du correctif de port proposé ; un correctif non proposé par le diagnostic est refusé. B est remis dans son état cassé de démo (502 vérifié via Traefik) ;
-- membre restreint : déploiements et logs d'un compose non accordé refusés.
+`dev/mcp/deployments-e2e.mjs`: **24/24** for real, via the tunnel:
+- deployments, status and build logs of an application and a compose;
+- Smart Deploy timeline (6 steps); explicit refusal for a compose;
+- runtime logs;
+- preflight;
+- diagnostic of B, then applying the proposed port fix; a fix not proposed by the diagnostic is refused. B is put back in its broken demo state (502 verified through Traefik);
+- restricted member: deployments and logs of an ungranted compose refused.
 
-Non-régression, rejouée via le tunnel :
-- `platform-e2e.mjs` : 59/59 ;
-- `oauth-mcp-e2e.mjs` : 35/36. Le contrôle « Host inconnu → 421 » reçoit 409, car c'est Cloudflare qui rejette le Host usurpé avant Dokploy. En direct sur `127.0.0.1:3000`, Dokploy renvoie bien 421.
+Non-regression, replayed via the tunnel:
+- `platform-e2e.mjs`: 59/59;
+- `oauth-mcp-e2e.mjs`: 35/36. The "unknown Host → 421" check receives 409, because Cloudflare rejects the spoofed Host before Dokploy. Directly on `127.0.0.1:3000`, Dokploy does return 421.
 
-Pour lancer ces scripts tant que `localhost:3000` est pris par un autre serveur ou que `/mcp` passe par un tunnel :
+To run these scripts while `localhost:3000` is taken by another server or `/mcp` goes through a tunnel:
 
 ```bash
 DOKPLOY_DEV_URL=http://127.0.0.1:3000 DOKPLOY_MCP_URL=https://<tunnel>/mcp node dev/mcp/deployments-e2e.mjs
 ```
 
-## Tests manuels de référence (applications de démo)
+## Smart Deploy for compose stacks and databases (2026-11-03)
 
-Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.
+| Measure | Result |
+|---|---|
+| Smart-deploy unit tests | **101/101**, including `service-diagnostics.test.ts` (database rules, compose, containers turned into tasks, Mongo false positive, stopped service with a domain) |
+| Full suite | **1698 passed**, 1 failed (known `backup-files.test.ts` timeout), 6 skipped (1705), run with `--maxWorkers=2` |
+| Typecheck | server and app clean |
+| Real scenario `dev/demo-apps/diagnose-services.mjs` | **21/21**; later runs 20/21 and 20/22 after a devbox restart (see below) |
+| Diagnostics A–G, version E | unchanged (A and E healthy, 22/22) after extracting the shared Swarm collector |
+| Isolation | **27/27** |
+| MCP deployments | **24/24** |
+| Browser | broken compose: banner (service `web`, "Use port 8081"), Smart Deploy tab (findings, services table, network path); `h-pg-upgraded` database: banner, Degraded verdict, root cause. Tabs on database pages widened ("Smart Deploy" overflowed) |
 
-## Plan de tests du fork
+Setup: `node dev/demo-apps/seed-services.mjs` (databases and compose broken on purpose, idempotent).
 
-À compléter phase par phase. Un test n'est marqué réussi qu'après avoir été réellement exécuté.
+The real scenario found and got fixed:
+- **a false positive**: MongoDB logs `featureCompatibilityVersion` on every startup, which triggered `DATA_DIRECTORY_INCOMPATIBLE`. The patterns were narrowed for every engine;
+- **escaped quotes**: docker compose writes `\"API_KEY\"` in its warnings, which the pattern did not match;
+- **a wrong fix**: after a Swarm rollback, `CONFIG_NOT_APPLIED` proposed a redeploy bound to fail. It is now linked to its cause, and the logs of the tasks that ran the configured image are read;
+- **an image without `cat`**: the port was not measured, hence the short-lived helper container;
+- **a database never created for lack of image**: no task carries the error, hence the registry check;
+- **compose services stopped** after a Docker restart, previously not reported. They now show as `SERVICE_STOPPED`, with one-click "Start" (tested), and take the stack `down` when they serve a domain.
 
-| Domaine | Type | Statut |
+Environment failures, unrelated to the code:
+- Docker Hub did not answer intermittently from the devbox (Redis redeploys failed, image check got no answer; the engine then concludes nothing, as designed);
+- the devbox restarted during a full suite run alongside the scenarios (memory);
+- `oauth-mcp-e2e.mjs` through the tunnel: IPv6 timeout to Cloudflare at the "spoofed Host" step. Directly, Dokploy does return 421.
+
+`dev/phase7/isolation-tests.mjs` now honours `DOKPLOY_MCP_URL`, like the other scripts. Before, it failed as soon as `/mcp` went through a tunnel.
+
+## Reference manual tests (demo applications)
+
+See `docs/LOCAL_DEVELOPMENT.md` › *Test account and demo applications*: with the upstream engine, 7 deployments are `done`, 4 of them applications returning 502.
+
+## Fork test plan
+
+To be completed phase by phase. A test is only marked as passed once it has actually been run.
+
+| Area | Type | Status |
 |---|---|---|
-| Règles de diagnostic (port, crash loop, env, localhost, healthcheck…) | unitaires + scénarios démo B/C/D/G | ✅ 34 tests unitaires ; scénarios A–G (sauf F, Compose) exécutés en réel via `diagnose.mjs` |
-| Version tracking (SHA distant / construit / exécuté, digest) | unitaires + scénario E | ✅ 8 tests unitaires ; scénario E 22/22 en réel |
-| Timeline / statut de vérification | intégration (devbox) + UI | ✅ A–G réels ; timeline UI testée dans le navigateur |
-| Preflight, applyFix, UI | unitaires + navigateur | ✅ 14 tests unitaires ; parcours réels (voir Phase 5) |
-| OAuth (PKCE, audience, expiration, révocation) | API + navigateur | ✅ 36/36 en réel (`dev/mcp/oauth-mcp-e2e.mjs`) ; consentement testé dans le navigateur |
-| MCP (outils, scopes, isolation projet, injection de logs) | API | ✅ outils, scopes, refus et redaction en réel ; isolation multi-utilisateurs 27/27 (Phase 7) ; MCP Inspector non utilisé |
-| MCP étendu (services, env, commande, confirmation humaine) | unitaires + API | ✅ 80 unitaires ; 59/59 en réel (`dev/mcp/platform-e2e.mjs`) ; backups non testés (pas de S3 local) |
-| Non-régression | suite upstream complète | référence ci-dessus |
+| Diagnostic rules (port, crash loop, env, localhost, healthcheck…) | unit + demo scenarios B/C/D/G | ✅ 34 unit tests; scenarios A–G (except F, Compose) run for real via `diagnose.mjs` |
+| Version tracking (remote / built / running SHA, digest) | unit + scenario E | ✅ 8 unit tests; scenario E 22/22 for real |
+| Timeline / verification status | integration (devbox) + UI | ✅ A–G real; UI timeline tested in the browser |
+| Preflight, applyFix, UI | unit + browser | ✅ 14 unit tests; real flows (see Phase 5) |
+| OAuth (PKCE, audience, expiry, revocation) | API + browser | ✅ 36/36 for real (`dev/mcp/oauth-mcp-e2e.mjs`); consent tested in the browser |
+| MCP (tools, scopes, project isolation, log injection) | API | ✅ tools, scopes, refusals and redaction for real; multi-user isolation 27/27 (Phase 7); MCP Inspector not used |
+| Extended MCP (services, env, command, human confirmation) | unit + API | ✅ 80 unit tests; 59/59 for real (`dev/mcp/platform-e2e.mjs`); backups not tested (no local S3) |
+| Non-regression | full upstream suite | baseline above |

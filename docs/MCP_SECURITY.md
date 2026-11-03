@@ -1,107 +1,107 @@
-# Sécurité du serveur MCP
+# MCP server security
 
-Principe : **un client MCP n'obtient jamais plus que ce que l'utilisateur qui l'a autorisé peut faire dans l'interface, et moins si l'utilisateur ou l'organisation le restreint.** Tout est revérifié côté serveur, à chaque requête.
+Principle: **an MCP client never gets more than the user who authorized it can do in the interface, and less if the user or organization restricts it.** Everything is re-checked server-side, on every request.
 
-## Permission effective
+## Effective permission
 
 ```
-permission effective = scopes du token ∩ scopes du grant (cases cochées au consentement)
-                     ∩ scopes autorisés par l'organisation ∩ permissions Dokploy de l'utilisateur
+effective permission = token scopes ∩ grant scopes (boxes checked at consent)
+                     ∩ scopes allowed by the organization ∩ the user's Dokploy permissions
 ```
 
-Les trois premiers termes sont recalculés à chaque requête (`mcp/token.ts`). Le quatrième est appliqué de deux façons :
-- les outils de `platform-tools.ts` appellent **les procédures tRPC de l'UI elles-mêmes** (`api-bridge.ts`), avec le contexte que Dokploy construit déjà pour une clé d'API de cet utilisateur dans cette organisation (rôle du membre relu en base à chaque appel). Seules les procédures de `mcp/api-paths.ts` sont appelables ;
-- les autres outils appellent les fonctions de permission de Dokploy (`checkServiceAccess`, `checkServicePermissionAndAccess`, `checkPermission`, projets, environnements et services accessibles d'un membre), exactement comme pour les routes tRPC. Chaque objet est en plus vérifié comme appartenant à l'organisation du grant.
+The first three terms are recomputed on every request (`mcp/token.ts`). The fourth is enforced in two ways:
+- the `platform-tools.ts` tools call **the UI's own tRPC procedures** (`api-bridge.ts`), with the context Dokploy already builds for an API key of that user in that organization (member role re-read from the database on every call). Only the procedures in `mcp/api-paths.ts` can be called;
+- the other tools call Dokploy's permission functions (`checkServiceAccess`, `checkServicePermissionAndAccess`, `checkPermission`, a member's accessible projects, environments and services), exactly as the tRPC routes do. Each object is also checked to belong to the grant's organization.
 
 ## OAuth 2.1
 
-| Exigence | Mise en œuvre |
+| Requirement | Implementation |
 |---|---|
-| Authorization Code + PKCE | PKCE obligatoire (S256) pour les clients publics ; grant `client_credentials` désactivé : tout token appartient à un utilisateur |
-| Découverte | RFC 9728 (`/.well-known/oauth-protected-resource/mcp`), RFC 8414 (`/.well-known/oauth-authorization-server/api/auth` et à la racine), `WWW-Authenticate: Bearer resource_metadata=…` sur les 401 |
-| Enregistrement des clients | RFC 7591 sans authentification (nécessaire aux clients MCP) ; scopes limités aux scopes MCP ; tout client doit ensuite passer par le consentement d'un utilisateur |
-| Resource indicators / audience (RFC 8707) | `resource` obligatoire ; seules les URLs de `DOKPLOY_MCP_RESOURCE_URL` sont acceptées ; le JWT porte `aud = …/mcp`, vérifié par `/mcp` |
-| Tokens courts | JWT d'accès de 15 min, refresh token de 7 jours, code d'autorisation à usage unique (rejeu refusé : testé) |
-| Révocation | Settings › AI Integrations ou `mcp.revokeGrant` : suppression du grant, du consentement et des tokens. Le JWT encore valide est **refusé immédiatement**, car `/mcp` vérifie le grant à chaque requête (testé). Endpoint RFC 7009 de better-auth disponible |
-| Validation des redirect URI | correspondance exacte avec les URIs enregistrées (better-auth) ; `iss` renvoyé avec le code (RFC 9207) |
-| CSRF | requête OAuth signée (`sig`, expiration) entre authorize, login et consentement ; cookies de session `SameSite=Lax` ; `state` restitué au client |
-| Validation serveur des tokens | signature (JWKS local), `iss`, `aud`, `exp`, puis client actif, grant existant, organisation MCP active et appartenance du membre |
-| Pas de token passthrough | le token MCP n'est jamais transmis à un autre service ; les appels aux providers Git utilisent les identifiants déjà configurés côté serveur |
-| Pas de jeton admin exposé | aucun token d'API Dokploy ni secret n'est émis ou renvoyé |
+| Authorization Code + PKCE | PKCE required (S256) for public clients; `client_credentials` grant disabled: every token belongs to a user |
+| Discovery | RFC 9728 (`/.well-known/oauth-protected-resource/mcp`), RFC 8414 (`/.well-known/oauth-authorization-server/api/auth` and at the root), `WWW-Authenticate: Bearer resource_metadata=…` on 401s |
+| Client registration | RFC 7591 without authentication (needed by MCP clients); scopes limited to MCP scopes; every client must still go through a user's consent |
+| Resource indicators / audience (RFC 8707) | `resource` required; only the URLs in `DOKPLOY_MCP_RESOURCE_URL` are accepted; the JWT carries `aud = …/mcp`, checked by `/mcp` |
+| Short-lived tokens | 15-minute access JWT, 7-day refresh token, single-use authorization code (replay rejected: tested) |
+| Revocation | Settings › AI Integrations or `mcp.revokeGrant`: deletes the grant, the consent and the tokens. A still-valid JWT is **rejected immediately**, because `/mcp` checks the grant on every request (tested). better-auth's RFC 7009 endpoint is available |
+| Redirect URI validation | exact match against registered URIs (better-auth); `iss` returned with the code (RFC 9207) |
+| CSRF | signed OAuth request (`sig`, with expiry) across authorize, login and consent; `SameSite=Lax` session cookies; `state` returned to the client |
+| Server-side token validation | signature (local JWKS), `iss`, `aud`, `exp`, then active client, existing grant, active MCP organization and member membership |
+| No token passthrough | the MCP token is never forwarded to another service; calls to Git providers use credentials already configured server-side |
+| No exposed admin token | no Dokploy API token or secret is issued or returned |
 
-## Consentement
+## Consent
 
-La page `/oauth/consent` affiche le nom du client, ses domaines de redirection, l'organisation et chaque permission avec sa description.
-- **Moindre privilège par défaut** : seul `mcp:read` est pré-coché.
-- Une case décochée n'est **ni dans le grant ni dans le consentement OAuth**. Testé : un client demandant `mcp:read mcp:deploy` n'a obtenu que `{mcp:read}`.
-- Une permission non autorisée par l'organisation est grisée.
-- Si l'intégration est désactivée dans toutes les organisations de l'utilisateur, aucune autorisation n'est possible.
+The `/oauth/consent` page shows the client name, its redirect domains, the organization and each permission with its description.
+- **Least privilege by default**: only `mcp:read` is pre-checked.
+- An unchecked box is **neither in the grant nor in the OAuth consent**. Tested: a client requesting `mcp:read mcp:deploy` only got `{mcp:read}`.
+- A permission not allowed by the organization is greyed out.
+- If the integration is disabled in all of the user's organizations, no authorization is possible.
 
-## Scopes étendus et confirmation humaine
+## Extended scopes and human confirmation
 
-| Scope | Par défaut | Risque couvert |
+| Scope | Default | Risk covered |
 |---|---|---|
-| `mcp:env` | désactivé | lecture des variables (secrets masqués), écriture |
-| `mcp:manage` | désactivé | création et suppression de projets, environnements et services ; arrêt ; backups et restauration |
-| `mcp:exec` | désactivé | commande libre dans un conteneur d'un service |
+| `mcp:env` | disabled | reading variables (secrets masked), writing |
+| `mcp:manage` | disabled | creating and deleting projects, environments and services; stopping; backups and restore |
+| `mcp:exec` | disabled | arbitrary command in a service's container |
 
-Un owner ou un admin les autorise par organisation. Le consentement ne propose que les scopes autorisés, et le grant est revérifié à chaque requête : retirer un scope coupe l'accès immédiatement.
+An owner or admin allows them per organization. Consent only offers the allowed scopes, and the grant is re-checked on every request: removing a scope cuts access immediately.
 
-**Actions confirmées** : suppression (service, environnement, projet, domaine), arrêt de service, restauration de backup et chaque commande. Garanties :
-- l'état de confirmation est **signé (HMAC-SHA256)** avec une clé dérivée de `BETTER_AUTH_SECRET`. Il expire au bout de 5 min et lie la confirmation à l'outil, à l'empreinte SHA-256 des arguments, à l'utilisateur, au client et au grant. Un état modifié est rejeté (`-32602`). Un état réutilisé pour une autre commande ou sans signature redemande une confirmation (testé) ;
-- les vérifications de permission et d'existence ont lieu **avant** la question : un membre sans accès est refusé sans voir de confirmation (testé) ;
-- un refus (`decline`/`cancel`) n'exécute rien et est journalisé (`declined`) ; une demande est journalisée (`confirmation_requested`).
+**Confirmed actions**: deletion (service, environment, project, domain), service stop, backup restore and every command. Guarantees:
+- the confirmation state is **signed (HMAC-SHA256)** with a key derived from `BETTER_AUTH_SECRET`. It expires after 5 min and binds the confirmation to the tool, the SHA-256 hash of the arguments, the user, the client and the grant. A modified state is rejected (`-32602`). A state reused for another command, or an unsigned one, triggers a new confirmation (tested);
+- permission and existence checks happen **before** the question: a member without access is refused without seeing a confirmation (tested);
+- a refusal (`decline`/`cancel`) executes nothing and is logged (`declined`); a request is logged (`confirmation_requested`).
 
-**Commande dans un conteneur** (`mcp:exec`) :
-- mêmes contrôles que le terminal de conteneur de l'UI : accès au service, conteneur appartenant au service (labels Docker), identifiant validé, serveur de l'organisation ;
-- arguments passés à `docker exec` sous forme de liste échappée (`shell-quote`) : la commande ne s'exécute que dans le conteneur, jamais dans le shell de l'hôte ;
-- délai maximal de 120 s (`timeout -k 5`), sortie limitée et nettoyée (valeurs d'environnement du service, mots de passe de la base, motifs de secrets), commande enregistrée dans l'audit après nettoyage.
+**Command in a container** (`mcp:exec`):
+- same checks as the UI's container terminal: access to the service, container belonging to the service (Docker labels), validated identifier, the organization's server;
+- arguments passed to `docker exec` as an escaped list (`shell-quote`): the command only runs in the container, never in the host shell;
+- maximum timeout of 120 s (`timeout -k 5`), output limited and sanitized (the service's environment values, database passwords, secret patterns), command recorded in the audit log after sanitization.
 
-**Écriture de secrets** : autorisée (`set_env_vars`, identifiants de registre). Écrire en retour un placeholder masqué (`[secret: …]`, `[REDACTED…]`) est refusé, pour ne pas écraser une vraie valeur. Les valeurs écrites ne sont jamais stockées dans l'audit (seuls les noms le sont).
+**Writing secrets**: allowed (`set_env_vars`, registry credentials). Writing a masked placeholder back (`[secret: …]`, `[REDACTED…]`) is refused, so that a real value is not overwritten. Written values are never stored in the audit log (only names are).
 
-## Protection de l'endpoint `/mcp`
+## `/mcp` endpoint protection
 
-| Menace | Contrôle |
+| Threat | Control |
 |---|---|
-| DNS rebinding, faux Host | Host comparé à la liste des URLs configurées → **421** ; l'audience et l'issuer ne sont jamais déduits du Host |
-| Pages web malveillantes (navigateur) | `Origin` d'un autre site → **403** |
-| Sondage de tokens | 30 requêtes non authentifiées/min par IP → **429** (testé) ; tokens invalides journalisés |
-| Abus d'un client | 120 requêtes/min et 10 mutations/min par couple utilisateur/client → **429** |
-| Entrées malformées | schémas zod stricts (identifiants `[A-Za-z0-9_-]{1,64}`, ports 1–65535, hostnames, chemins) ; JSON invalide et corps > 1 Mio refusés |
-| Oracle d'existence | « application inconnue » et « accès refusé » donnent la même réponse |
-| Fuite de secrets | variables dont le nom évoque un secret masquées (`[secret: set]`), autres valeurs nettoyées (identifiants dans les URLs, secrets connus) ; mots de passe de base, clés SSH et identifiants de registre jamais renvoyés ; logs et sorties de commande passés au redactor (valeurs configurées, mots de passe, tokens, JWT, clés AWS et PEM) |
-| Injection dans les logs | séquences ANSI et caractères de contrôle supprimés, lignes tronquées ; même nettoyage pour les arguments stockés dans l'audit |
-| Exécution arbitraire | seulement via `dokploy_exec_command` : scope `mcp:exec` désactivé par défaut, confirmation humaine à chaque commande, conteneur du service uniquement. Les autres commandes exécutées sont fixes et internes (lecture de log par `tail` sur un chemin validé sous `LOGS_PATH`) |
-| Isolation | grant lié à une organisation ; objets d'autres organisations ou projets non accordés → « not found or access denied » |
-| Interruption client | `AbortSignal` propagé à la requête ; écriture de réponse arrêtée à la fermeture de la connexion |
+| DNS rebinding, spoofed Host | Host compared against the list of configured URLs → **421**; the audience and issuer are never derived from the Host |
+| Malicious web pages (browser) | `Origin` from another site → **403** |
+| Token probing | 30 unauthenticated requests/min per IP → **429** (tested); invalid tokens are logged |
+| Client abuse | 120 requests/min and 10 mutations/min per user/client pair → **429** |
+| Malformed input | strict zod schemas (identifiers `[A-Za-z0-9_-]{1,64}`, ports 1–65535, hostnames, paths); invalid JSON and bodies > 1 MiB rejected |
+| Existence oracle | "unknown application" and "access denied" give the same response |
+| Secret leakage | variables whose name suggests a secret are masked (`[secret: set]`), other values sanitized (credentials in URLs, known secrets); database passwords, SSH keys and registry credentials are never returned; logs and command output go through the redactor (configured values, passwords, tokens, JWTs, AWS keys and PEM) |
+| Log injection | ANSI sequences and control characters removed, lines truncated; same sanitization for arguments stored in the audit log |
+| Arbitrary execution | only via `dokploy_exec_command`: `mcp:exec` scope disabled by default, human confirmation on every command, service container only. The other commands executed are fixed and internal (log reading via `tail` on a validated path under `LOGS_PATH`) |
+| Isolation | grant tied to one organization; objects from other organizations or ungranted projects → "not found or access denied" |
+| Client interruption | `AbortSignal` propagated to the request; response writing stops when the connection closes |
 
-## Journal d'audit
+## Audit log
 
-`mcp_audit_log` enregistre :
-- chaque appel d'outil ou lecture de ressource : utilisateur, client, organisation, cible, durée, résultat `ok`, `denied`, `error`, `rate_limited`, `confirmation_requested` ou `declined` ;
-- chaque token rejeté, consentement, révocation et changement de réglages.
+`mcp_audit_log` records:
+- every tool call or resource read: user, client, organization, target, duration, and a result of `ok`, `denied`, `error`, `rate_limited`, `confirmation_requested` or `declined`;
+- every rejected token, consent, revocation and settings change.
 
-Les arguments sont réduits aux scalaires, puis nettoyés. Le journal est visible dans Settings › AI Integrations : en entier pour les owners et admins, limité à ses propres entrées pour un membre.
+Arguments are reduced to scalars, then sanitized. The log is visible in Settings › AI Integrations: in full for owners and admins, limited to their own entries for a member.
 
-Le journal d'audit natif de Dokploy (`audit_log`) n'est pas alimenté directement par MCP : il relève du code sous licence propriétaire et dépend d'une licence entreprise. Les procédures tRPC appelées par le pont y écrivent toutefois comme pour l'UI, au nom de l'utilisateur, lorsque ce journal est actif.
+Dokploy's native audit log (`audit_log`) is not fed directly by MCP: it belongs to the proprietary-licensed code and depends on an enterprise license. The tRPC procedures called by the bridge do write to it as they do for the UI, on the user's behalf, when that log is active.
 
-## Rôles
+## Roles
 
-| Action | Qui |
+| Action | Who |
 |---|---|
-| Activer ou désactiver l'intégration, choisir les scopes autorisés | owner ou admin de l'organisation |
-| Autoriser un client | tout membre, dans les limites ci-dessus |
-| Voir et révoquer ses propres clients | tout membre |
-| Voir et révoquer tous les clients, voir tout l'audit | owner ou admin |
+| Enable or disable the integration, choose the allowed scopes | organization owner or admin |
+| Authorize a client | any member, within the limits above |
+| View and revoke their own clients | any member |
+| View and revoke all clients, view the whole audit log | owner or admin |
 
-## Limites et points ouverts
+## Limitations and open points
 
-- **La confirmation repose sur le client** : le serveur ne peut pas prouver qu'un humain a répondu. Il garantit seulement qu'une question a été posée pour cet appel exact et que la réponse est revenue avec l'état signé. Un client malveillant détenant un token `mcp:exec` peut répondre lui-même. C'est pourquoi `mcp:exec` et `mcp:manage` sont désactivés par défaut.
-- **État de confirmation lisible** : il est signé, pas chiffré. Le client peut y lire les identifiants internes de l'utilisateur, du client et du grant, qu'il connaît déjà.
-- **Timeout de commande** : `timeout` arrête le client `docker exec`. Un processus lancé dans le conteneur qui ignore le signal peut survivre.
-- **Backups** : `run_backup`, `list_backup_files` et `restore_backup` n'ont pas été testés en réel, faute de destination S3 dans l'environnement local.
+- **Confirmation relies on the client**: the server cannot prove that a human answered. It only guarantees that a question was asked for this exact call and that the answer came back with the signed state. A malicious client holding an `mcp:exec` token can answer on its own. This is why `mcp:exec` and `mcp:manage` are disabled by default.
+- **Readable confirmation state**: it is signed, not encrypted. The client can read the internal identifiers of the user, client and grant in it, which it already knows.
+- **Command timeout**: `timeout` stops the `docker exec` client. A process started in the container that ignores the signal may survive.
+- **Backups**: `run_backup`, `list_backup_files` and `restore_backup` have not been tested for real, for lack of an S3 destination in the local environment.
 
-- **Enregistrement dynamique non authentifié** : un tiers peut créer des entrées `oauth_client` sans pouvoir rien en faire sans consentement utilisateur. Il n'y a pas encore de purge des clients jamais autorisés, ni de limite de débit dédiée sur `/oauth2/register` : seule la limitation générique de better-auth, active par défaut en production, s'applique.
-- **Refresh token** : il n'est pas lié à l'appareil (pas de DPoP).
-- **Rate limiting en mémoire** : à remplacer par un stockage partagé si Dokploy tourne sur plusieurs instances.
-- **Tests de sécurité** : ils ont été exécutés en local (`dev/mcp/oauth-mcp-e2e.mjs`, 36 vérifications ; tests unitaires `mcp.test.ts`). L'isolation entre deux utilisateurs ou deux organisations distincts n'a pas encore été testée en réel (Phase 7).
+- **Unauthenticated dynamic registration**: a third party can create `oauth_client` entries but can do nothing with them without user consent. There is no purge yet of clients that were never authorized, and no dedicated rate limit on `/oauth2/register`: only better-auth's generic rate limiting, active by default in production, applies.
+- **Refresh token**: it is not bound to the device (no DPoP).
+- **In-memory rate limiting**: to be replaced by shared storage if Dokploy runs on several instances.
+- **Security tests**: they were run locally (`dev/mcp/oauth-mcp-e2e.mjs`, 36 checks; `mcp.test.ts` unit tests). Isolation between two distinct users or organizations has not yet been tested for real (Phase 7).

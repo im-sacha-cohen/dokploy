@@ -1,134 +1,153 @@
-# Journal d'implémentation
+# Implementation log
 
-Branche de travail : `feat/smart-deploy-mcp` (basée sur `upstream/canary` @ `46a0762`).
-Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
+Working branch: `feat/smart-deploy-mcp` (based on `upstream/canary` @ `46a0762`).
+`upstream` remote = `Dokploy/dokploy`. Nothing has been pushed.
 
-| Phase | Statut | Livrable |
+| Phase | Status | Deliverable |
 |---|---|---|
-| 1 — Audit | ✅ Terminé (02/11/2026) | `docs/ARCHITECTURE_AUDIT.md` |
-| 2 — Environnement local | ✅ Validé (02/11/2026) | `docs/LOCAL_DEVELOPMENT.md`, `docs/TESTING.md`, devbox, apps de démo |
-| 3 — Diagnostics | ✅ Validé (02/11/2026) | `docs/DEPLOYMENT_DIAGNOSTICS.md`, `smart-deploy/diagnostics`, API `smartDeploy.diagnoseApplication` |
-| 4 — Version tracking | ✅ Validé (02/11/2026) | `docs/SMART_DEPLOY_ENGINE.md`, `smart-deploy/versioning`, migration 0199 |
-| 5 — UI déploiement | ✅ Validé (02/11/2026) | onglet Smart Deploy, `smart-deploy/preflight`, `smart-deploy/actions`, `docs/SMART_DEPLOY_ENGINE.md` |
-| 6 — Serveur MCP + OAuth | ✅ Validé (02/11/2026) | `/mcp`, OAuth 2.1 via better-auth, consentement, Settings › AI Integrations, `docs/MCP_ARCHITECTURE.md`, `docs/MCP_SECURITY.md` |
-| 7 — Tests finaux | ✅ Validé (02/11/2026) | `docs/FINAL_REPORT.md`, `dev/phase7/` |
+| 1 — Audit | ✅ Done (2026-11-02) | `docs/ARCHITECTURE_AUDIT.md` |
+| 2 — Local environment | ✅ Validated (2026-11-02) | `docs/LOCAL_DEVELOPMENT.md`, `docs/TESTING.md`, devbox, demo apps |
+| 3 — Diagnostics | ✅ Validated (2026-11-02) | `docs/DEPLOYMENT_DIAGNOSTICS.md`, `smart-deploy/diagnostics`, `smartDeploy.diagnoseApplication` API |
+| 4 — Version tracking | ✅ Validated (2026-11-02) | `docs/SMART_DEPLOY_ENGINE.md`, `smart-deploy/versioning`, migration 0199 |
+| 5 — Deployment UI | ✅ Validated (2026-11-02) | Smart Deploy tab, `smart-deploy/preflight`, `smart-deploy/actions`, `docs/SMART_DEPLOY_ENGINE.md` |
+| 6 — MCP server + OAuth | ✅ Validated (2026-11-02) | `/mcp`, OAuth 2.1 via better-auth, consent, Settings › AI Integrations, `docs/MCP_ARCHITECTURE.md`, `docs/MCP_SECURITY.md` |
+| 7 — Final tests | ✅ Validated (2026-11-02) | `docs/FINAL_REPORT.md`, `dev/phase7/` |
 
-## Journal
+## Log
 
-### 02/11/2026 — Phase 1
-- Clone de `canary`, remote renommé `upstream`, branche `feat/smart-deploy-mcp`.
-- Audit en lecture seule ; aucun code exécuté, aucune dépendance installée.
-- Rien n'est encore testé.
-- Fork créé : `im-sacha-cohen/dokploy` (public, remote `origin`). Aucun push.
+### 2026-11-02 — Phase 1
+- Cloned `canary`, renamed the remote to `upstream`, created the `feat/smart-deploy-mcp` branch.
+- Read-only audit; no code executed, no dependency installed.
+- Nothing is tested yet.
+- Fork created: `im-sacha-cohen/dokploy` (public, remote `origin`). No push.
 
-### 02/11/2026 — Phase 2
-- Devbox Docker-in-Docker (`docker-compose.dev.yml`, `dev/devbox/`, `scripts/dev-*.sh`) : démon interne 28.5.2, Swarm actif à l'intérieur, Swarm de l'hôte toujours inactif.
-- Setup upstream exécuté sans modification : Traefik, Postgres et migrations OK ; UI joignable sur http://localhost:3000.
-- 7 applications de démo (A–G) servies par un serveur Git local et créées via l'API (`seed.mjs`).
-- Constat de référence : 7 déploiements `done`, dont 4 en 502 (B, C, D, G).
-- Suite de tests upstream : 1595/1604 au premier lancement ; les 3 échecs sont expliqués et passent seuls (`docs/TESTING.md`).
-- Compte propriétaire de test créé sur l'instance locale (identifiants dans `dev/.env`, gitignoré).
+### 2026-11-02 — Phase 2
+- Docker-in-Docker devbox (`docker-compose.dev.yml`, `dev/devbox/`, `scripts/dev-*.sh`): internal daemon 28.5.2, Swarm active inside, host Swarm still inactive.
+- Upstream setup run unmodified: Traefik, Postgres and migrations OK; UI reachable at http://localhost:3000.
+- 7 demo applications (A–G) served by a local Git server and created through the API (`seed.mjs`).
+- Baseline finding: 7 `done` deployments, 4 of which return 502 (B, C, D, G).
+- Upstream test suite: 1595/1604 on the first run; the 3 failures are explained and pass when run alone (`docs/TESTING.md`).
+- Test owner account created on the local instance (credentials in `dev/.env`, gitignored).
 
-### 02/11/2026 — Phase 3
-- Phase 1-2 committée en local (`4402bf3`), sans push.
-- Moteur de règles déterministe `packages/server/src/smart-deploy/diagnostics` : collecte en lecture seule (Docker API, `/proc/net/tcp`, sondes depuis le conteneur Traefik), puis 8 règles pures avec chaînage des causes et redaction des secrets.
-- Endpoint `smartDeploy.diagnoseApplication` (tRPC + REST, droit lecture du service, contrôle d'organisation).
-- 34 tests unitaires (règles, parseurs, redaction, validation des entrées des sondes) ; typecheck serveur et app OK.
-- Exécuté sur les apps de démo : A et E `healthy` ; B, C, D et G `down`, chacune avec sa cause racine (voir `docs/DEPLOYMENT_DIAGNOSTICS.md`).
-- `dev/demo-apps/api-client.mjs` factorisé depuis `seed.mjs` ; nouveau `diagnose.mjs`.
-- Non couvert : services Compose (F), images sans `cat`, persistance des rapports, codes de version (Phase 4).
+### 2026-11-02 — Phase 3
+- Phase 1-2 committed locally (`4402bf3`), no push.
+- Deterministic rule engine `packages/server/src/smart-deploy/diagnostics`: read-only collection (Docker API, `/proc/net/tcp`, probes from the Traefik container), then 8 pure rules with cause chaining and secret redaction.
+- `smartDeploy.diagnoseApplication` endpoint (tRPC + REST, service read permission, organization check).
+- 34 unit tests (rules, parsers, redaction, probe input validation); server and app typecheck OK.
+- Run against the demo apps: A and E `healthy`; B, C, D and G `down`, each with its root cause (see `docs/DEPLOYMENT_DIAGNOSTICS.md`).
+- `dev/demo-apps/api-client.mjs` factored out of `seed.mjs`; new `diagnose.mjs`.
+- Not covered: Compose services (F), images without `cat`, report persistence, version codes (Phase 4).
 
-### 02/11/2026 — Phase 4
-- Phase 3 committée en local (`4865da3`), sans push.
-- Migration `0199_smart_deploy_version_tracking` : 16 colonnes nullables sur `deployment`. La ligne de dérive upstream que `drizzle-kit` avait ajoutée (défaut de `webServerSettings.whitelabelingConfig`) a été retirée du SQL.
-- Capture par déploiement : type d'action, dépôt sans identifiants, branche, commits demandé, récupéré et construit, image (ID, digest, tag `dpl-<id>`, 5 conservées), conteneur et tâche réellement exécutés.
-- Vérification post-déploiement par étapes : build, conteneur créé, running, healthy, reachable.
-- Commit distant vérifié via l'API des providers ou `git ls-remote`, jamais supposé.
-- Actions distinctes : Redeploy et Rollback d'une image conservée, sans fetch ni build (`smartDeploy.redeployVersion`, via la file de déploiement) ; Restart sans rebuild ni changement de config (`smartDeploy.restartApplication`). Deploy Latest et Rebuild upstream sont désormais tracés.
-- Règles `GIT_COMMIT_OUTDATED` et `IMAGE_VERSION_MISMATCH`.
-- Modifications upstream minimales : 6 appels dans `services/application.ts`, un type de job et une branche dans la file, le schéma `deployment`.
-- Tests : 8 tests unitaires de plus (42 au total). Scénario E : 22/22 en réel. A–G : vérification `healthy`, `degraded` ou `failed`, chacune avec sa cause.
-- Devbox corrigé :
-  - PID `containerd` périmés après `docker restart` ;
-  - serveur Git de démo tué par le démarrage (désormais lancé en `setsid` et supervisé) ;
-  - l'ancienne image embarquait une copie figée de l'entrypoint.
-- Constaté, non corrigé (upstream) : au redémarrage, le setup Dokploy tente de recréer Traefik et échoue sur une entrée DNS Swarm déjà existante (`dokploy-traefik-previous`). Traefik reste en service et le démarrage continue.
+### 2026-11-02 — Phase 4
+- Phase 3 committed locally (`4865da3`), no push.
+- Migration `0199_smart_deploy_version_tracking`: 16 nullable columns on `deployment`. The upstream drift line that `drizzle-kit` had added (default of `webServerSettings.whitelabelingConfig`) was removed from the SQL.
+- Per-deployment capture: action type, repository without credentials, branch, requested, fetched and built commits, image (ID, digest, `dpl-<id>` tag, 5 kept), container and task actually running.
+- Step-by-step post-deployment verification: build, container created, running, healthy, reachable.
+- Remote commit verified through the provider API or `git ls-remote`, never assumed.
+- Distinct actions: Redeploy and Rollback of a kept image, without fetch or build (`smartDeploy.redeployVersion`, via the deployment queue); Restart without rebuild or config change (`smartDeploy.restartApplication`). Upstream Deploy Latest and Rebuild are now tracked.
+- `GIT_COMMIT_OUTDATED` and `IMAGE_VERSION_MISMATCH` rules.
+- Minimal upstream changes: 6 calls in `services/application.ts`, one job type and one branch in the queue, the `deployment` schema.
+- Tests: 8 more unit tests (42 total). Scenario E: 22/22 for real. A–G: `healthy`, `degraded` or `failed` verification, each with its cause.
+- Devbox fixed:
+  - stale `containerd` PIDs after `docker restart`;
+  - demo Git server killed by startup (now launched with `setsid` and supervised);
+  - the old image embedded a frozen copy of the entrypoint.
+- Found, not fixed (upstream): on restart, the Dokploy setup tries to recreate Traefik and fails on an already existing Swarm DNS entry (`dokploy-traefik-previous`). Traefik stays in service and startup continues.
 
-### 02/11/2026 — Phase 5
-- Phase 4 committée en local (`ad13de3`), sans push.
-- Preflight : clone temporaire avec les fonctions de clone existantes, lecture des manifestes, `git grep` des variables et des lignes d'écoute, puis analyse pure. Détections avec confiance et source, 8 contrôles. Secrets masqués, `.env` jamais lu.
-- API :
-  - `smartDeploy.preflight`, `getDeploymentTimeline`, `deployLatest` ;
-  - `applyFix`, revalidé par un diagnostic frais : seuls les correctifs proposés et `autoFixable` sont acceptés.
-- UI : onglet « Smart Deploy » avec la carte de version courante, l'historique avec redeploy et rollback, et l'assistant Source → Configuration → Preflight → Deployment (timeline réelle) → Result (correctifs confirmés). Onglets existants inchangés.
-- Le verdict de santé n'est plus influencé par `GIT_COMMIT_OUTDATED`.
-- Tests : 56 tests unitaires smart-deploy et parcours réels dans le navigateur (voir `TESTING.md`).
-- Langue : l'interface est en anglais comme Dokploy ; les textes générés par le serveur (constats, raisons) sont en français. **À trancher.**
+### 2026-11-02 — Phase 5
+- Phase 4 committed locally (`ad13de3`), no push.
+- Preflight: temporary clone using the existing clone functions, manifest reading, `git grep` for variables and listen lines, then pure analysis. Detections with confidence and source, 8 checks. Secrets masked, `.env` never read.
+- API:
+  - `smartDeploy.preflight`, `getDeploymentTimeline`, `deployLatest`;
+  - `applyFix`, revalidated by a fresh diagnosis: only proposed, `autoFixable` fixes are accepted.
+- UI: "Smart Deploy" tab with the current version card, the history with redeploy and rollback, and the Source → Configuration → Preflight → Deployment (real timeline) → Result (confirmed fixes) assistant. Existing tabs unchanged.
+- The health verdict is no longer influenced by `GIT_COMMIT_OUTDATED`.
+- Tests: 56 smart-deploy unit tests and real flows in the browser (see `TESTING.md`).
+- Language: the interface is in English like Dokploy; the server-generated texts (findings, reasons) were in French, since translated to English (2026-11-03).
 
-### 02/11/2026 — Phase 6
-- Phase 5 committée en local (`b42b08b`), sans push.
-- Dépendances : `@better-auth/oauth-provider@1.6.23` (serveur et app) et `@modelcontextprotocol/server@2.4.0` (déjà dans le lockfile en transitive). Diff des `package.json` limité à ces lignes.
-- OAuth 2.1 sur l'auth better-auth existante (plugins `oauthProvider` + `jwt`) :
-  - Authorization Code + PKCE, enregistrement dynamique, audience RFC 8707 ;
-  - JWT de 15 min et refresh de 7 jours, `client_credentials` désactivé ;
-  - endpoint `/token` du plugin `jwt` et en-tête JWT de session désactivés.
-- Migration `0200_mcp_oauth` : 5 tables OAuth et 3 tables MCP (réglages, grants, audit).
-- `/mcp` :
-  - transport Streamable HTTP sans état (2026-07-28 et repli 2025) ;
-  - contrôles Host/Origin, Bearer, audience, grant revérifié à chaque requête, rate limiting ;
-  - 19 outils, 2 ressources, audit.
-- Page de consentement : choix de l'organisation, cases réellement appliquées, moindre privilège par défaut. La page de login reprend le flux OAuth après connexion.
-- Settings › AI Integrations : activation, URL, scopes autorisés, test de connexion, clients connectés, révocation, audit.
-- Tests :
-  - `dev/mcp/oauth-mcp-e2e.mjs` : 36/36 en réel ;
-  - consentement réel dans le navigateur, et reprise après login ;
-  - 12 tests unitaires MCP (67 au total dans smart-deploy).
-- Bugs trouvés et corrigés : chemins de logs contenant `:` refusés (affectait aussi `BUILD_FAILED`) ; endpoints RFC 8414 relatifs ; script de test qui écrasait les cookies.
-- Non fait : CIMD, tunnel public pour un client distant, isolation multi-utilisateurs testée en réel (Phase 7).
+### 2026-11-02 — Phase 6
+- Phase 5 committed locally (`b42b08b`), no push.
+- Dependencies: `@better-auth/oauth-provider@1.6.23` (server and app) and `@modelcontextprotocol/server@2.4.0` (already in the lockfile as a transitive dependency). `package.json` diff limited to these lines.
+- OAuth 2.1 on top of the existing better-auth setup (`oauthProvider` + `jwt` plugins):
+  - Authorization Code + PKCE, dynamic registration, RFC 8707 audience;
+  - 15-minute JWT and 7-day refresh, `client_credentials` disabled;
+  - the `jwt` plugin's `/token` endpoint and the session JWT header disabled.
+- Migration `0200_mcp_oauth`: 5 OAuth tables and 3 MCP tables (settings, grants, audit).
+- `/mcp`:
+  - stateless Streamable HTTP transport (2026-07-28 with 2025 fallback);
+  - Host/Origin checks, Bearer, audience, grant rechecked on every request, rate limiting;
+  - 19 tools, 2 resources, audit.
+- Consent page: organization choice, checkboxes actually enforced, least privilege by default. The login page resumes the OAuth flow after sign-in.
+- Settings › AI Integrations: activation, URL, allowed scopes, connection test, connected clients, revocation, audit.
+- Tests:
+  - `dev/mcp/oauth-mcp-e2e.mjs`: 36/36 for real;
+  - real consent in the browser, and resume after login;
+  - 12 MCP unit tests (67 total in smart-deploy).
+- Bugs found and fixed: log paths containing `:` were rejected (also affected `BUILD_FAILED`); relative RFC 8414 endpoints; test script that overwrote cookies.
+- Not done: CIMD, public tunnel for a remote client, multi-user isolation tested for real (Phase 7).
 
-### 02/11/2026 — Phase 7
-- Phase 6 committée en local (`a5ba6c5`), sans push.
-- `dev/phase7/setup-isolation.mjs` (idempotent) prépare :
-  - une 2e organisation ;
-  - un projet restreint ;
-  - un membre de test invité avec un accès limité (mot de passe aléatoire dans `dev/.env`, gitignoré).
-- `dev/phase7/isolation-tests.mjs` : 27/27. `dev/phase7/run-all.sh` rejoue tous les scénarios.
-- Stabilité : redémarrage complet puis répétitions, tout est vert.
-- Suite complète : 1661 tests passés, seuls les 4 timeouts connus de `backup-files` échouent.
-- `dev/demo-apps/api-client.mjs` gère désormais plusieurs sessions et des en-têtes supplémentaires.
-- Bilan et limitations consolidées : `docs/FINAL_REPORT.md`.
+### 2026-11-02 — Phase 7
+- Phase 6 committed locally (`a5ba6c5`), no push.
+- `dev/phase7/setup-isolation.mjs` (idempotent) prepares:
+  - a 2nd organization;
+  - a restricted project;
+  - an invited test member with limited access (random password in `dev/.env`, gitignored).
+- `dev/phase7/isolation-tests.mjs`: 27/27. `dev/phase7/run-all.sh` replays all the scenarios.
+- Stability: full restart then repeated runs, everything green.
+- Full suite: 1661 tests passed, only the 4 known `backup-files` timeouts fail.
+- `dev/demo-apps/api-client.mjs` now handles multiple sessions and extra headers.
+- Summary and consolidated limitations: `docs/FINAL_REPORT.md`.
 
-### 02/11/2026 — Erreurs et ports mis en évidence (après Phase 7)
-- Bandeau d'état sur tous les onglets de l'application : cause racine et une action principale.
-- Carte « Network path » (onglets Smart Deploy et Domains), badges de joignabilité par domaine, port détecté dans le formulaire de domaine, vrai résultat dans l'onglet Deployments.
-- `diagnostics/presentation.ts` (pur) et 6 tests unitaires (73 au total dans smart-deploy).
-- Vérifié dans le navigateur sur A (sain), B (port), C (crash) et G (localhost).
+### 2026-11-02 — Errors and ports made visible (after Phase 7)
+- Status banner on every application tab: root cause and one primary action.
+- "Network path" card (Smart Deploy and Domains tabs), per-domain reachability badges, detected port in the domain form, real result in the Deployments tab.
+- `diagnostics/presentation.ts` (pure) and 6 unit tests (73 total in smart-deploy).
+- Verified in the browser on A (healthy), B (port), C (crash) and G (localhost).
 
-### 03/11/2026 — MCP « tout faire »
-- Commit précédent : `35f1217` (UX erreurs et ports).
-- 25 nouveaux outils (44 au total) : services de tous types, logs, variables, réglages, source, build, compose, domaines, création et suppression, backups, commande dans un conteneur.
-- Pont `apps/dokploy/server/mcp/api-bridge.ts` : les outils appellent les procédures tRPC de l'UI (liste blanche `mcp/api-paths.ts`), donc mêmes permissions.
-- Nouveaux scopes `mcp:env`, `mcp:manage`, `mcp:exec`, désactivés par défaut ; avertissements dans Settings › AI Integrations.
-- Confirmation humaine par elicitation, avec état HMAC lié à l'appel (`mcp/confirm.ts`), pour les suppressions, l'arrêt, la restauration et chaque commande.
-- Bugs trouvés par le e2e et corrigés : déploiement d'application absent de la liste blanche, identifiant de projet non renvoyé, choix du conteneur quand une app a plusieurs tâches.
-- Tests : 80 unitaires, `platform-e2e.mjs` 59/59, `run-all.sh` entièrement OK (dont isolation 27/27), suite complète 1677 passés (seul le timeout connu de `backup-files` échoue, 14/14 seul).
+### 2026-11-03 — MCP "do everything"
+- Previous commit: `35f1217` (error and port UX).
+- 25 new tools (44 total): services of all types, logs, variables, settings, source, build, compose, domains, creation and deletion, backups, command in a container.
+- Bridge `apps/dokploy/server/mcp/api-bridge.ts`: tools call the UI's tRPC procedures (allowlist `mcp/api-paths.ts`), so the same permissions apply.
+- New scopes `mcp:env`, `mcp:manage`, `mcp:exec`, disabled by default; warnings in Settings › AI Integrations.
+- Human confirmation through elicitation, with an HMAC state bound to the call (`mcp/confirm.ts`), for deletions, stop, restore and every command.
+- Bugs found by the e2e and fixed: application deploy missing from the allowlist, project ID not returned, container choice when an app has several tasks.
+- Tests: 80 unit tests, `platform-e2e.mjs` 59/59, `run-all.sh` fully OK (including isolation 27/27), full suite 1677 passed (only the known `backup-files` timeout fails, 14/14 when run alone).
 
-### 03/11/2026 — Enregistrement DNS depuis le formulaire de domaine
-- Réutilise les fournisseurs DNS d'upstream (Settings › DNS : Cloudflare, Route 53, OVH, Infomaniak, Porkbun).
-- Formulaire « Add domain » : bloc « Create the DNS record » avec zone, sous-domaine suggéré (`service` ou `service-environnement`, suffixe si pris), statut en direct, IP du serveur, proxy Cloudflare (désactivé par défaut). Un clic crée l'enregistrement A puis le domaine ; si le domaine échoue, l'enregistrement est retiré.
-- Jamais d'écrasement : un nom déjà utilisé par un A/AAAA/CNAME est refusé, même côté serveur ; un nom pointant déjà ici est réutilisé sans être créé.
-- Table `domain_dns_record` (migration 0201, additive) : seuls les enregistrements créés par Dokploy sont suivis. La suppression du domaine propose de supprimer l'enregistrement, case cochée par défaut, seulement s'il pointe encore sur ce serveur.
-- Routeur tRPC `domainDns` (le routeur `domain` d'upstream est appelé tel quel) ; MCP : `dokploy_suggest_subdomain`, option `dns` de `dokploy_create_domain`, suppression d'enregistrement dans `dokploy_delete_domain`.
-- Le schéma `domain` d'upstream n'est pas modifié : une première version avec des colonnes cassait les fixtures de test d'upstream.
+### 2026-11-03 — DNS record creation from the domain form
+- Reuses upstream's DNS providers (Settings › DNS: Cloudflare, Route 53, OVH, Infomaniak, Porkbun).
+- "Add domain" form: "Create the DNS record" block with zone, suggested subdomain (`service` or `service-environment`, suffixed if taken), live status, server IP, Cloudflare proxy (disabled by default). One click creates the A record, then the domain; if the domain fails, the record is removed.
+- Never overwrites: a name already used by an A/AAAA/CNAME is refused, also on the server side; a name already pointing here is reused without being created.
+- `domain_dns_record` table (migration 0201, additive): only records created by Dokploy are tracked. Deleting the domain offers to delete the record, checkbox ticked by default, only if it still points to this server.
+- `domainDns` tRPC router (upstream's `domain` router is called as is); MCP: `dokploy_suggest_subdomain`, `dns` option of `dokploy_create_domain`, record deletion in `dokploy_delete_domain`.
+- Upstream's `domain` schema is not modified: a first version with extra columns broke upstream's test fixtures.
 
-### 03/11/2026 — MCP : déploiements, Smart Deploy et logs complets
-- `dokploy_get_deployments`, `dokploy_get_deployment_status` et `dokploy_get_deployment_logs` couvrent aussi les compose (contrôle d'accès au compose et à l'organisation).
-- Nouveaux outils : `dokploy_preflight`, `dokploy_get_deployment_timeline` (avant, ressource seulement), `dokploy_apply_fix` (correctif revalidé contre le diagnostic courant).
-- `dev/mcp/deployments-e2e.mjs` : 24/24. Les clients de test acceptent `DOKPLOY_DEV_URL` et `DOKPLOY_MCP_URL` en variables d'environnement.
+### 2026-11-03 — MCP: deployments, Smart Deploy and full logs
+- `dokploy_get_deployments`, `dokploy_get_deployment_status` and `dokploy_get_deployment_logs` also cover compose (access check on the compose and the organization).
+- New tools: `dokploy_preflight`, `dokploy_get_deployment_timeline` (previously resource only), `dokploy_apply_fix` (fix revalidated against the current diagnosis).
+- `dev/mcp/deployments-e2e.mjs`: 24/24. The test clients accept `DOKPLOY_DEV_URL` and `DOKPLOY_MCP_URL` as environment variables.
 
-## Décisions validées
-- Environnement local : devbox Docker-in-Docker.
-- Images taguées par déploiement (`<app>:<deploymentId>`), conservation des 5 dernières.
-- OAuth : `@better-auth/oauth-provider` greffé sur l'auth better-auth existante (mêmes comptes, login, 2FA, SSO).
-- DNS depuis le formulaire (choix utilisateur du 03/11/2026) : proposer de supprimer l'enregistrement avec le domaine ; tests réels sur une zone dédiée ; exposition au MCP.
-- MCP « tout faire » (choix utilisateur du 02/11/2026) : écriture des secrets autorisée, lecture sans les secrets ; actions destructrices avec confirmation ; commande libre avec confirmation (l'interdiction initiale du brief est levée pour `mcp:exec` uniquement).
+### 2026-11-03 — Smart Deploy for every service
+- Previous commits: `3f9a0b9a7` (DNS from the domain form), `806187a8f` (MCP: DNS, compose, Smart Deploy).
+- **Engine**:
+  - shared Swarm collection (`collect/swarm.ts`), plus `database.ts` and `compose.ts` collectors;
+  - 7 new codes (`IMAGE_PULL_FAILED`, `OUT_OF_MEMORY`, `DISK_FULL`, `DATA_DIRECTORY_INCOMPATIBLE`, `EXTERNAL_PORT_UNAVAILABLE`, `CONFIG_NOT_APPLIED`, `SERVICE_STOPPED`) and a `stopped` verdict;
+  - rule sets per service type;
+  - per-service aggregation for compose stacks.
+- **API**: `smartDeploy.diagnoseService` and `smartDeploy.applyServiceFix`. The latter goes through the upstream procedures `compose.redeploy`/`start`, `<db>.deploy`/`start` and `domain.update`.
+- **UI**: status banner and Smart Deploy tab on the compose page and the 5 database pages (findings per service, services table, network path, database facts).
+- **MCP**: `dokploy_diagnose_service`; `dokploy_apply_fix` covers every service type.
+- **Tests**: 101 smart-deploy unit tests, full suite 1698 passed, real scenario 21/21, isolation 27/27, MCP deployments 24/24.
+- **Bugs found for real and fixed**:
+  - MongoDB false positive;
+  - escaped quotes in compose warnings;
+  - a redeploy bound to fail after a Swarm rollback;
+  - images without `cat`;
+  - missing image with no task to carry the error;
+  - compose services stopped after a Docker restart.
+
+## Validated decisions
+- Local environment: Docker-in-Docker devbox.
+- Images tagged per deployment (`<app>:<deploymentId>`), last 5 kept.
+- OAuth: `@better-auth/oauth-provider` grafted onto the existing better-auth setup (same accounts, login, 2FA, SSO).
+- DNS from the form (user choice of 2026-11-03): offer to delete the record along with the domain; real tests on a dedicated zone; exposure to MCP.
+- MCP "do everything" (user choice of 2026-11-02): writing secrets allowed, reading without the secrets; destructive actions with confirmation; free-form command with confirmation (the brief's initial prohibition is lifted for `mcp:exec` only).

@@ -1,206 +1,220 @@
 # Smart Deploy Engine
 
-Code : `packages/server/src/smart-deploy/` (serveur) et `apps/dokploy/components/dashboard/application/smart-deploy/` (UI). Ce document décrit :
-- l'**analyse préalable** (*preflight*) ;
-- le **parcours de déploiement** dans l'interface ;
-- les **corrections** et la façon dont elles sont validées ;
-- le **suivi de version** ;
-- les **actions de déploiement** ;
-- la **vérification post-déploiement**.
+Code: `packages/server/src/smart-deploy/` (server) and `apps/dokploy/components/dashboard/application/smart-deploy/` (UI). This document covers:
+- the **preflight analysis**;
+- the **deployment flow** in the interface;
+- **fixes** and how they are validated;
+- **version tracking**;
+- **deployment actions**;
+- **post-deployment verification**.
 
-Les diagnostics sont documentés dans `DEPLOYMENT_DIAGNOSTICS.md`.
+Diagnostics are documented in `DEPLOYMENT_DIAGNOSTICS.md`.
 
-## Interface : erreurs et ports mis en évidence
+## Interface: highlighted errors and ports
 
-Ajoutés après la Phase 7, à ta demande. La logique d'affichage est pure, et testée (`diagnostics/presentation.ts`).
+Added after Phase 7, at your request. The display logic is pure, and tested (`diagnostics/presentation.ts`).
 
-| Où | Quoi |
+| Where | What |
 |---|---|
-| **Bandeau d'état** au-dessus des onglets de l'application, visible sur **tous** les onglets | Il apparaît si l'app est *down* ou *degraded*. Il affiche une seule cause : la cause racine (`pickRootCause`), pas ses conséquences (on voit « mauvais port », et non « 502 Traefik »). Il propose une action principale : la correction confirmée si elle est automatisable, sinon « Set DATABASE_URL… », qui ouvre l'onglet Environment. Il donne aussi un lien vers le diagnostic complet et un bouton pour revérifier |
-| **Carte « Network path »** dans les onglets Smart Deploy et Domains | Pour chaque domaine : Domaine → Traefik (réponse réelle) → port ciblé → ports réellement en écoute (`0.0.0.0` ou `127.0.0.1`, `EXPOSE`). Chaque maillon est vert, rouge ou « inconnu » (jamais vert sans mesure), avec le bouton de correction du port sur la ligne fautive et les ports publiés sur l'hôte |
-| **Onglet Domains** | Badge par domaine : « Reachable », « Unreachable · wrong port », « app not listening » ou « Not verified ». Dans le formulaire, sous « Container Port » : le port réellement en écoute, une alerte s'il diffère et un bouton « Use 3000 » |
-| **Onglet Deployments** | À côté du « done » d'upstream : « Build OK · App did not start », « Running but unhealthy or unreachable », « Verified healthy »… |
+| **Status banner** above the application tabs, visible on **all** tabs | It appears if the app is *down* or *degraded*. It shows a single cause: the root cause (`pickRootCause`), not its consequences (you see "wrong port", not "502 Traefik"). It offers one primary action: the confirmed fix if it can be automated, otherwise "Set DATABASE_URL…", which opens the Environment tab. It also links to the full diagnostic and has a button to re-check |
+| **"Network path" card** in the Smart Deploy and Domains tabs | For each domain: Domain → Traefik (actual response) → targeted port → ports actually listening (`0.0.0.0` or `127.0.0.1`, `EXPOSE`). Each link is green, red or "unknown" (never green without a measurement), with the port fix button on the faulty row and the ports published on the host |
+| **Domains tab** | Badge per domain: "Reachable", "Unreachable · wrong port", "app not listening" or "Not verified". In the form, under "Container Port": the port actually listening, an alert if it differs, and a "Use 3000" button |
+| **Deployments tab** | Next to upstream's "done": "Build OK · App did not start", "Running but unhealthy or unreachable", "Verified healthy"… |
 
-Le bandeau, la carte, les badges et l'aide au port partagent **une seule requête de diagnostic** (cache de 30 s) : afficher la page ne lance pas plusieurs diagnostics. Ajouts dans le code upstream : 35 lignes, sans modifier de ligne existante.
+The banner, card, badges and port helper share **a single diagnostic query** (30 s cache): displaying the page does not launch several diagnostics. Additions to upstream code: 35 lines, without modifying any existing line.
 
-## Interface : onglet « Smart Deploy »
+## Interface: "Smart Deploy" tab
 
-Nouvel onglet de la page Application, visible avec le droit `deployment.read`. Les onglets existants (General, Environment, Domains, Deployments, Advanced…) sont inchangés : les réglages avancés restent où ils étaient.
+New tab on the Application page, visible with the `deployment.read` permission. The existing tabs (General, Environment, Domains, Deployments, Advanced…) are unchanged: advanced settings stay where they were.
 
-**Carte « Current deployment »** :
-- Status (live) : verdict du diagnostic en direct.
-- Last deployment check : résultat de la vérification faite au déploiement.
-- Branche ; running commit (seulement s'il est prouvé par l'image exacte) ; latest remote commit (« Not verified », avec la raison, si la vérification Git a échoué).
-- Image qui tourne, réplicas, état de version, méthode de correspondance.
-- Actions Deploy latest (marquée *recommended* si la version est dépassée) et Restart.
-- Historique des versions, avec Redeploy / Roll back par ligne. Masqué pour l'image déjà en cours.
+**"Current deployment" card**:
+- Status (live): live diagnostic verdict.
+- Last deployment check: result of the verification done at deployment time.
+- Branch; running commit (only if proven by the exact image); latest remote commit ("Not verified", with the reason, if the Git check failed).
+- Running image, replicas, version state, matching method.
+- Deploy latest action (marked *recommended* if the version is outdated) and Restart.
+- Version history, with Redeploy / Roll back per row. Hidden for the image already running.
 
-**Assistant en 5 étapes** :
+**5-step wizard**:
 
-| Étape | Contenu |
+| Step | Content |
 |---|---|
-| 1. Source | type, dépôt (sans identifiants), branche ; lien vers General |
-| 2. Configuration | type de build, Dockerfile, domaines et ports, **noms** des variables (jamais les valeurs), healthcheck ; liens vers Environment, Domains, Advanced |
-| 3. Preflight | analyse du dépôt (ci-dessous), puis bouton Deploy latest. La confirmation signale les problèmes bloquants, ou un preflight non lancé |
-| 4. Deployment | timeline réelle (lancé, build, conteneur créé, running, healthy, reachable) rafraîchie toutes les 2 s, avec les logs de build (visionneuse existante) |
-| 5. Result | diagnostic complet : verdict, constats avec preuves, cause, confiance, risque ; bouton « Apply fix » pour les correctifs automatiques ; lien vers l'onglet concerné sinon ; liste de ce qui n'a pas pu être vérifié |
+| 1. Source | type, repository (without credentials), branch; link to General |
+| 2. Configuration | build type, Dockerfile, domains and ports, variable **names** (never values), healthcheck; links to Environment, Domains, Advanced |
+| 3. Preflight | repository analysis (below), then the Deploy latest button. The confirmation flags blocking problems, or a preflight that was not run |
+| 4. Deployment | real timeline (started, build, container created, running, healthy, reachable) refreshed every 2 s, with the build logs (existing viewer) |
+| 5. Result | full diagnostic: verdict, findings with evidence, cause, confidence, risk; "Apply fix" button for automatic fixes; otherwise a link to the relevant tab; list of what could not be verified |
 
-Toute action (deploy, restart, redeploy/rollback, correction) passe par une boîte de confirmation qui décrit le changement exact et son risque.
+Every action (deploy, restart, redeploy/rollback, fix) goes through a confirmation dialog that describes the exact change and its risk.
 
 ## Preflight
 
-`smartDeploy.preflight({ applicationId })` (droit lecture) :
-1. Clone superficiel de la branche configurée dans `…/smart-deploy/preflight/<app>-<aléa>`, avec la fonction de clone existante du provider, donc les mêmes identifiants. Le dossier est supprimé à la sortie (`trap … EXIT`), succès ou échec. Pour une source `drop`, c'est le dossier de code existant qui est lu ; pour `docker`, rien n'est analysé.
-2. Lecture des manifestes (taille ≤ 64 Ko) : `package.json`, `requirements.txt`, `pyproject.toml`, `go.mod`, `Gemfile`, `composer.json`, `Procfile`, fichiers Compose, Dockerfile configuré, `.env.example`. **`.env` n'est jamais lu.**
-3. `git grep` des références aux variables d'environnement (Node, Python, Go, Ruby, Rust, PHP) et des lignes d'écoute (`listen(`, `app.run(`, `--host`, routes de santé).
-4. Analyse pure (`preflight/analyze.ts`) : rien n'est construit ni exécuté depuis le dépôt.
+`smartDeploy.preflight({ applicationId })` (read permission):
+1. Shallow clone of the configured branch into `…/smart-deploy/preflight/<app>-<random>`, using the provider's existing clone function, so with the same credentials. The folder is deleted on exit (`trap … EXIT`), on success or failure. For a `drop` source, the existing code folder is read; for `docker`, nothing is analyzed.
+2. Reads manifests (size ≤ 64 KB): `package.json`, `requirements.txt`, `pyproject.toml`, `go.mod`, `Gemfile`, `composer.json`, `Procfile`, Compose files, the configured Dockerfile, `.env.example`. **`.env` is never read.**
+3. `git grep` for environment variable references (Node, Python, Go, Ruby, Rust, PHP) and listen lines (`listen(`, `app.run(`, `--host`, health routes).
+4. Pure analysis (`preflight/analyze.ts`): nothing from the repository is built or executed.
 
-Chaque détection porte une **confiance** et sa **source** :
-- **Détections** : langage, framework, gestionnaire de paquets, Dockerfile (EXPOSE, HEALTHCHECK, CMD), Compose (services), commandes de build et de démarrage, ports attendus (EXPOSE, valeur par défaut dans le code, option `--port`/`--bind`, port par défaut du framework), variables référencées, documentées, configurées et manquantes, healthcheck.
-- **Contrôles** :
-  - `BUILD_CONFIGURATION_MISMATCH` : type de build ≠ contenu du dépôt ;
-  - `PORT_MISMATCH` : port du domaine absent des ports attendus ;
-  - `MISSING_ENVIRONMENT_VARIABLE` ;
-  - `APPLICATION_LISTENING_ON_LOCALHOST` : bind 127.0.0.1, ou Flask `app.run()` sans host ;
-  - `NO_HEALTHCHECK` ;
-  - `COMPOSE_PROJECT` ;
-  - `NO_DOMAIN` ;
+Each detection carries a **confidence** and its **source**:
+- **Detections**: language, framework, package manager, Dockerfile (EXPOSE, HEALTHCHECK, CMD), Compose (services), build and start commands, expected ports (EXPOSE, default value in code, `--port`/`--bind` option, framework default port), referenced, documented, configured and missing variables, healthcheck.
+- **Checks**:
+  - `BUILD_CONFIGURATION_MISMATCH`: build type ≠ repository contents;
+  - `PORT_MISMATCH`: domain port not among the expected ports;
+  - `MISSING_ENVIRONMENT_VARIABLE`;
+  - `APPLICATION_LISTENING_ON_LOCALHOST`: bind to 127.0.0.1, or Flask `app.run()` without host;
+  - `NO_HEALTHCHECK`;
+  - `COMPOSE_PROJECT`;
+  - `NO_DOMAIN`;
   - `SOURCE_UNAVAILABLE`.
 
-Les valeurs de `ENV` du Dockerfile, de `.env.example` et des commandes passent par le *redactor* ; seuls les noms sortent. Mesuré sur les apps de démo : 90 à 250 ms par analyse.
+`ENV` values from the Dockerfile, `.env.example` and commands go through the *redactor*; only names come out. Measured on the demo apps: 90 to 250 ms per analysis.
 
-## Corrections : jamais arbitraires
+## Fixes: never arbitrary
 
-`smartDeploy.applyFix({ applicationId, action })` :
-1. Vérifie le droit correspondant : `domain.create` pour un port, `deployment.create` pour un déploiement.
-2. **Relance un diagnostic** et n'accepte l'action que si un constat *actuel* la propose avec `autoFixable: true`, à l'identique (`findProposedFix`). Une UI, ou plus tard un client MCP, ne peut donc pas soumettre un changement arbitraire.
-3. Applique la correction :
-   - `update_domain_port` : modifie **uniquement** le port du domaine (qui doit appartenir à l'application), puis régénère sa route Traefik ;
-   - `deploy_latest` / `redeploy_deployment` : passe par la file de déploiement.
-4. Écrit une entrée d'audit.
+`smartDeploy.applyFix({ applicationId, action })`:
+1. Checks the matching permission: `domain.create` for a port, `deployment.create` for a deployment.
+2. **Re-runs a diagnostic** and only accepts the action if a *current* finding proposes it with `autoFixable: true`, identically (`findProposedFix`). A UI, or later an MCP client, therefore cannot submit an arbitrary change.
+3. Applies the fix:
+   - `update_domain_port`: changes **only** the domain's port (which must belong to the application), then regenerates its Traefik route;
+   - `deploy_latest` / `redeploy_deployment`: goes through the deployment queue.
+4. Writes an audit entry.
 
-Les variables d'environnement manquantes ne sont **jamais** corrigées automatiquement : les valeurs sont des secrets que seul l'utilisateur connaît. L'UI ouvre l'onglet Environment.
+Missing environment variables are **never** fixed automatically: the values are secrets only the user knows. The UI opens the Environment tab.
 
-## Problème corrigé
+## Problem fixed
 
-Dans Dokploy upstream :
-- Un déploiement passe à `done` dès que `docker service update` est accepté. Une app en crash loop ou injoignable est donc affichée « réussie ».
-- Le commit n'est conservé que comme texte (`description: "Commit: <sha>"`) et seulement *après* coup.
-- Toutes les images s'appellent `<app>:latest` : impossible de savoir quelle version tourne réellement.
-- « Rebuild » reconstruit le dossier de code existant, sans le dire.
-- Le rollback n'existe qu'avec un registre.
+In upstream Dokploy:
+- A deployment becomes `done` as soon as `docker service update` is accepted. An app in a crash loop or unreachable is therefore shown as "successful".
+- The commit is only kept as text (`description: "Commit: <sha>"`) and only *after the fact*.
+- All images are named `<app>:latest`: there is no way to know which version is actually running.
+- "Rebuild" rebuilds the existing code folder, without saying so.
+- Rollback only exists with a registry.
 
-## Données enregistrées par déploiement
+## Data recorded per deployment
 
-Migration `0199_smart_deploy_version_tracking`. Elle ajoute 16 colonnes **nullables** à `deployment`, sans valeur par défaut : les lignes existantes et les chemins upstream non modifiés (Compose, previews) restent valides.
+Migration `0199_smart_deploy_version_tracking`. It adds 16 **nullable** columns to `deployment`, with no default value: existing rows and unmodified upstream paths (Compose, previews) remain valid.
 
-| Champ | Signification | Source |
+| Field | Meaning | Source |
 |---|---|---|
-| `kind` | `deploy_latest`, `rebuild`, `redeploy`, `rollback` ou `restart` | action réellement exécutée |
-| `sourceRepository`, `sourceBranch` | dépôt (**identifiants retirés** de l'URL) et branche | configuration |
-| `requestedCommitSha` | ce qui a été demandé : tête distante au moment de la demande (deploy latest, lue par la file de déploiement avant l'appel de `deployApplication`) ou commit de la version redéployée | API du provider ou `git ls-remote` |
-| `fetchedCommitSha` | ce que le clone a réellement récupéré (`null` si rien n'a été récupéré) | `git rev-parse HEAD` après clone |
-| `builtCommitSha` | commit du code qui a servi au build | `git rev-parse HEAD` du dossier de build |
-| `imageId` | identifiant de contenu de l'image produite (`sha256:…`) | `docker image inspect` |
-| `imageDigest` | digest de registre (`repo@sha256:…`), seulement si l'image a été poussée ou tirée | `RepoDigests` |
-| `imageTag` | tag conservé `dokploy-versions/<app>:dpl-<deploymentId>` (redéployable) | `docker tag` |
-| `runningImageId`, `containerId`, `taskId` | ce qui tourne réellement après déploiement | tâche Swarm + `container inspect` |
-| `verificationStatus`, `verification` | résultat de la vérification par étapes (ci-dessous) | observation |
-| `sourceDeploymentId` | pour redeploy, rollback et restart : la version d'origine | action |
+| `kind` | `deploy_latest`, `rebuild`, `redeploy`, `rollback` or `restart` | action actually executed |
+| `sourceRepository`, `sourceBranch` | repository (**credentials removed** from the URL) and branch | configuration |
+| `requestedCommitSha` | what was requested: remote head at request time (deploy latest, read by the deployment queue before calling `deployApplication`) or the commit of the redeployed version | provider API or `git ls-remote` |
+| `fetchedCommitSha` | what the clone actually fetched (`null` if nothing was fetched) | `git rev-parse HEAD` after clone |
+| `builtCommitSha` | commit of the code used for the build | `git rev-parse HEAD` of the build folder |
+| `imageId` | content identifier of the produced image (`sha256:…`) | `docker image inspect` |
+| `imageDigest` | registry digest (`repo@sha256:…`), only if the image was pushed or pulled | `RepoDigests` |
+| `imageTag` | retained tag `dokploy-versions/<app>:dpl-<deploymentId>` (redeployable) | `docker tag` |
+| `runningImageId`, `containerId`, `taskId` | what is actually running after deployment | Swarm task + `container inspect` |
+| `verificationStatus`, `verification` | result of the step-by-step verification (below) | observation |
+| `sourceDeploymentId` | for redeploy, rollback and restart: the original version | action |
 
-Si l'arbre de travail est modifié (patchs Dokploy appliqués), `verification.sourceDirty` le signale : le build ne correspond alors pas exactement au commit.
+If the working tree is modified (Dokploy patches applied), `verification.sourceDirty` flags it: the build then does not exactly match the commit.
 
-Le suivi ne peut **jamais** faire échouer un déploiement : chaque étape de capture intercepte et journalise ses propres erreurs.
+Tracking can **never** make a deployment fail: each capture step catches and logs its own errors.
 
-## Actions : chacune fait ce que son nom dit
+## Actions: each does what its name says
 
-| Action | Ce qui se passe | Git | Build | Endpoint |
+| Action | What happens | Git | Build | Endpoint |
 |---|---|---|---|---|
-| **Deploy Latest** | clone la tête de la branche, construit, met à jour le service | oui | oui | `application.deploy` (upstream, désormais suivi) |
-| **Rebuild** | reconstruit le **dossier de code présent** (le dernier clone), sans récupérer | non | oui | `application.redeploy` (upstream, suivi : `builtCommitSha` dit explicitement ce qui a été reconstruit) |
-| **Redeploy** | remet en service l'**image exacte** d'un déploiement antérieur ou courant | non | non | `smartDeploy.redeployVersion` |
-| **Rollback** | même mécanisme, vers une version **plus ancienne** que celle en cours ; le type est déterminé automatiquement | non | non | `smartDeploy.redeployVersion` |
-| **Restart** | redémarre les conteneurs avec la spec Swarm actuelle (incrément de `ForceUpdate`), sans rebuild ni réapplication de la configuration | non | non | `smartDeploy.restartApplication` |
+| **Deploy Latest** | clones the branch head, builds, updates the service | yes | yes | `application.deploy` (upstream, now tracked) |
+| **Rebuild** | rebuilds the **existing code folder** (the last clone), without fetching | no | yes | `application.redeploy` (upstream, tracked: `builtCommitSha` states exactly what was rebuilt) |
+| **Redeploy** | puts the **exact image** of a previous or current deployment back into service | no | no | `smartDeploy.redeployVersion` |
+| **Rollback** | same mechanism, to a version **older** than the running one; the type is determined automatically | no | no | `smartDeploy.redeployVersion` |
+| **Restart** | restarts the containers with the current Swarm spec (`ForceUpdate` increment), without rebuilding or reapplying the configuration | no | no | `smartDeploy.restartApplication` |
 
-Le « Reload » d'upstream (`application.reload`) est conservé tel quel. Il réapplique la configuration, ce qui en fait un « redéploiement de config » et non un simple redémarrage.
+Upstream's "Reload" (`application.reload`) is kept as is. It reapplies the configuration, which makes it a "config redeploy" rather than a simple restart.
 
-### Redeploy et rollback sans registre
+### Redeploy and rollback without a registry
 
-- Chaque build réussi est tagué `dokploy-versions/<app>:dpl-<deploymentId>`. C'est un dépôt d'image séparé, pour que `docker images <app>` reste identique à upstream. Les **5 dernières** images taguées sont conservées ; les plus anciennes sont dé-taguées avec `docker image rm`, sans `-f`, donc jamais une image utilisée.
-- Avant de redéployer, l'ID de l'image taguée est comparé à `imageId` : une image modifiée est refusée.
-- La configuration utilisée est la configuration **actuelle** (variables d'environnement, ports, montages). Le rollback upstream par registre restaure, lui, l'ancienne configuration complète.
-- Non disponible (refus explicite) quand l'application utilise un registre, un serveur de build distinct ou une source `docker`. Le rollback par registre d'upstream reste utilisable dans ces cas.
+- Each successful build is tagged `dokploy-versions/<app>:dpl-<deploymentId>`. This is a separate image repository, so that `docker images <app>` stays identical to upstream. The **last 5** tagged images are kept; older ones are untagged with `docker image rm`, without `-f`, so an image in use is never removed.
+- Before redeploying, the tagged image's ID is compared with `imageId`: a modified image is refused.
+- The configuration used is the **current** one (environment variables, ports, mounts). Upstream's registry-based rollback, by contrast, restores the full previous configuration.
+- Not available (explicit refusal) when the application uses a registry, a separate build server or a `docker` source. Upstream's registry rollback remains usable in those cases.
 
-## Vérification post-déploiement
+## Post-deployment verification
 
-Lancée en arrière-plan à la fin de chaque action ; la file de déploiement n'attend pas. Chaque étape est enregistrée séparément :
+Started in the background at the end of each action; the deployment queue does not wait. Each step is recorded separately:
 
-| Étape | Réussie quand |
+| Step | Succeeds when |
 |---|---|
-| `build` | la commande de build a réussi (`not_applicable` pour redeploy, rollback et restart) |
-| `containerCreated` | une tâche de la **nouvelle** spec (même `ForceUpdate`, créée après le déploiement) a un conteneur |
-| `containerRunning` | cette tâche est `running` depuis ≥ 10 s. **Échec** dès 2 tâches en échec sans tâche active, ou 3 au total |
-| `healthy` | healthcheck Docker `healthy` ; `not_applicable` sans healthcheck, auquel cas l'app **n'est pas déclarée saine** |
-| `reachable` | pas de `REVERSE_PROXY_UNREACHABLE` selon les sondes Traefik ; `not_applicable` sans domaine |
+| `build` | the build command succeeded (`not_applicable` for redeploy, rollback and restart) |
+| `containerCreated` | a task of the **new** spec (same `ForceUpdate`, created after the deployment) has a container |
+| `containerRunning` | that task has been `running` for ≥ 10 s. **Fails** as soon as 2 tasks have failed with no active task, or 3 in total |
+| `healthy` | Docker healthcheck `healthy`; `not_applicable` without a healthcheck, in which case the app is **not declared healthy** |
+| `reachable` | no `REVERSE_PROXY_UNREACHABLE` according to the Traefik probes; `not_applicable` without a domain |
 
-**Échéance** : 120 s, prolongée selon le healthcheck (`start_period + interval × (retries+1)`, 10 min max).
+**Deadline**: 120 s, extended according to the healthcheck (`start_period + interval × (retries+1)`, 10 min max).
 
-**Statut global** (`verificationStatus`) :
+**Overall status** (`verificationStatus`):
 
-| Statut | Signification |
+| Status | Meaning |
 |---|---|
-| `healthy` | toutes les étapes sont passées, healthcheck compris |
-| `running` | l'app tourne et répond, mais aucun healthcheck n'a pu le prouver |
-| `degraded` | l'app tourne, mais elle est malsaine ou injoignable |
-| `failed` | le build ou le démarrage a échoué |
-| `unknown` | la vérification a été interrompue (déploiement plus récent, erreur, redémarrage du serveur) |
+| `healthy` | all steps passed, healthcheck included |
+| `running` | the app is running and responding, but no healthcheck could prove it |
+| `degraded` | the app is running, but it is unhealthy or unreachable |
+| `failed` | the build or startup failed |
+| `unknown` | the verification was interrupted (newer deployment, error, server restart) |
 
-À la fin, le moteur de diagnostic tourne et les codes trouvés sont enregistrés dans `verification.findings`.
+At the end, the diagnostic engine runs and the codes found are recorded in `verification.findings`.
 
-`deployment.status` garde la sémantique upstream (`done` = build et mise à jour acceptés), pour rester compatible avec l'UI et les notifications existantes. **C'est `verificationStatus` qui dit si l'application fonctionne.**
+`deployment.status` keeps upstream semantics (`done` = build and update accepted), to stay compatible with the existing UI and notifications. **`verificationStatus` is what says whether the application works.**
 
-## Statut de version
+## Version status
 
-`smartDeploy.getVersionStatus({ applicationId, checkRemote })` renvoie :
-- **Live** : tâches en cours, conteneur, `runningImageId`.
-- **Current** : le déploiement dont `imageId` = image réellement exécutée (`currentMatch: "image_match"`). À défaut, le dernier déploiement réussi est renvoyé avec `currentMatch: "latest_successful"` : le commit exécuté est alors déclaré **inconnu**.
-- **Latest remote** : tête de branche vérifiée via l'API du provider (GitHub, GitLab, Gitea, Bitbucket, avec les identifiants déjà configurés) ou `git ls-remote` (Git personnalisé, HTTP(S) ou SSH avec la clé configurée, écrite dans un fichier temporaire supprimé à la sortie). En cas d'échec, `status: "error"` avec la raison : **jamais de commit supposé**.
-- `versionState` : `up_to_date`, `outdated`, `unknown` ou `not_applicable`, avec une explication.
-- `recommendedAction` : `deploy_latest`, `diagnose` ou `none`.
-- `history` : les 20 derniers déploiements avec leurs champs de version et `redeployable`.
+`smartDeploy.getVersionStatus({ applicationId, checkRemote })` returns:
+- **Live**: running tasks, container, `runningImageId`.
+- **Current**: the deployment whose `imageId` = the image actually running (`currentMatch: "image_match"`). Failing that, the last successful deployment is returned with `currentMatch: "latest_successful"`: the running commit is then declared **unknown**.
+- **Latest remote**: branch head checked via the provider API (GitHub, GitLab, Gitea, Bitbucket, with the credentials already configured) or `git ls-remote` (custom Git, HTTP(S) or SSH with the configured key, written to a temporary file deleted on exit). On failure, `status: "error"` with the reason: **a commit is never assumed**.
+- `versionState`: `up_to_date`, `outdated`, `unknown` or `not_applicable`, with an explanation.
+- `recommendedAction`: `deploy_latest`, `diagnose` or `none`.
+- `history`: the last 20 deployments with their version fields and `redeployable`.
 
-Deux règles de diagnostic utilisent ces données :
-- `GIT_COMMIT_OUTDATED` : le commit exécuté diffère de la tête distante **vérifiée**. Correctif proposé : `deploy_latest`.
-- `IMAGE_VERSION_MISMATCH` : le dernier déploiement `done` a enregistré une image différente de celle qui tourne. Correctif proposé : `redeploy_deployment`.
+Two diagnostic rules use this data:
+- `GIT_COMMIT_OUTDATED`: the running commit differs from the **verified** remote head. Proposed fix: `deploy_latest`.
+- `IMAGE_VERSION_MISMATCH`: the last `done` deployment recorded a different image from the one running. Proposed fix: `redeploy_deployment`.
 
-## Résultats mesurés (devbox, 02/11/2026)
+## Measured results (devbox, 2026-11-02)
 
-`node dev/demo-apps/version-scenario.mjs` joue le scénario E : deploy latest → push → outdated → deploy latest → rollback → restart → rebuild. **22/22 vérifications réussies**, notamment :
-- commit demandé = récupéré = construit, image taguée, vérification `healthy` ;
-- après un push : `outdated` avec le commit distant réellement vérifié, et diagnostic `GIT_COMMIT_OUTDATED` ;
-- rollback : aucune récupération Git, image identique à celle du déploiement 1, **image réellement exécutée vérifiée**, ancienne version servie ;
-- restart : même image, même version servie ;
-- rebuild : `fetchedCommitSha = null`, `builtCommitSha` = commit du dernier clone (explicite).
+`node dev/demo-apps/version-scenario.mjs` plays scenario E: deploy latest → push → outdated → deploy latest → rollback → restart → rebuild. **22/22 checks passed**, notably:
+- requested commit = fetched = built, tagged image, `healthy` verification;
+- after a push: `outdated` with the actually verified remote commit, and `GIT_COMMIT_OUTDATED` diagnostic;
+- rollback: no Git fetch, image identical to deployment 1, **running image actually verified**, old version served;
+- restart: same image, same version served;
+- rebuild: `fetchedCommitSha = null`, `builtCommitSha` = commit of the last clone (explicit).
 
-Vérification des apps en échec, toutes `done` dans le statut upstream :
+Verification of the failing apps, all `done` in upstream status:
 
-| App | verificationStatus | Étapes | Constats |
+| App | verificationStatus | Steps | Findings |
 |---|---|---|---|
-| A | healthy | tout passé | — |
+| A | healthy | all passed | — |
 | B | degraded | running ✓, healthy ✓, reachable ✗ | PORT_MISMATCH, REVERSE_PROXY_UNREACHABLE |
 | C | failed | running ✗ | CONTAINER_CRASH_LOOP |
 | D | failed | running ✗ | MISSING_ENVIRONMENT_VARIABLE, CONTAINER_CRASH_LOOP |
 | G | degraded | running ✓, healthy n/a, reachable ✗ | APPLICATION_LISTENING_ON_LOCALHOST, REVERSE_PROXY_UNREACHABLE |
 
-Le premier essai, pour G, ne remontait que la conséquence : le diagnostic final tournait avant le délai de grâce de 20 s des règles d'écoute. La vérification attend désormais ce délai ; le résultat ci-dessus vient du second essai.
+The first attempt, for G, only reported the consequence: the final diagnostic ran before the 20 s grace period of the listening rules. The verification now waits for that delay; the result above comes from the second attempt.
 
-## Limites
+## Limitations
 
-- **Compose** et **previews** ne sont pas suivis : ils gardent le comportement upstream.
-- **Rebuild d'un commit précis** : non implémenté. Rebuild reconstruit le dernier clone, et le dit. Pour revenir à une version antérieure, utiliser Redeploy/Rollback (image conservée).
-- **Restart** : la spec Swarm référence `<app>:latest`. Si `latest` a été déplacé sans mise à jour du service, le restart lance la nouvelle image ; `IMAGE_VERSION_MISMATCH` le signale.
-- **Swarm multi-nœuds avec registre** : l'ID d'image est mesuré sur le serveur de build, et le digest de registre n'est disponible qu'après push.
-- **`docker image prune --all`** (nettoyage Dokploy « Clean all images ») supprime les images conservées qui ne sont pas utilisées. Redeploy le détecte et refuse avec un message clair.
-- **Interruption** : une vérification interrompue par un redémarrage de Dokploy reste `verifying`. Elle est présentée comme `unknown` au-delà de 15 min.
-- **Webhooks** : le SHA poussé n'est pas encore utilisé. `requestedCommitSha` est la tête de branche lue au moment du déploiement.
-- **Dokploy Cloud** : `redeployVersion` est refusé (le chemin d'exécution distant d'upstream ne connaît pas ce type de job).
+- **Compose** and **previews** are not tracked: they keep upstream behavior.
+- **Rebuilding a specific commit**: not implemented. Rebuild rebuilds the last clone, and says so. To go back to an earlier version, use Redeploy/Rollback (retained image).
+- **Restart**: the Swarm spec references `<app>:latest`. If `latest` was moved without updating the service, the restart launches the new image; `IMAGE_VERSION_MISMATCH` flags it.
+- **Multi-node Swarm with a registry**: the image ID is measured on the build server, and the registry digest is only available after a push.
+- **`docker image prune --all`** (Dokploy's "Clean all images" cleanup) removes retained images that are not in use. Redeploy detects this and refuses with a clear message.
+- **Interruption**: a verification interrupted by a Dokploy restart stays `verifying`. It is shown as `unknown` after 15 min.
+- **Webhooks**: the pushed SHA is not used yet. `requestedCommitSha` is the branch head read at deployment time.
+- **Dokploy Cloud**: `redeployVersion` is refused (upstream's remote execution path does not know this job type).
+
+## Compose et bases de données (03/11/2026)
+
+Smart Deploy est disponible sur tous les types de services :
+- **bandeau d'état** au-dessus des onglets ;
+- **onglet Smart Deploy** :
+  - constats, chacun avec son service pour les compose ;
+  - correctifs confirmés ;
+  - table des services d'un stack ;
+  - carte réseau domaine → service → port ;
+  - faits d'une base : image configurée et image en cours, port interne en écoute, port externe publié.
+
+Les applications gardent en plus l'assistant, le préflight, la timeline et le suivi de version par commit. Détails des règles et de la collecte : `DEPLOYMENT_DIAGNOSTICS.md`.
+

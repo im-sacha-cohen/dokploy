@@ -246,7 +246,7 @@ export const trackBuildFailure = (deploymentId: string) =>
 			verification.stages.containerCreated = {
 				status: "failed",
 				at,
-				detail: "la mise à jour du service Swarm a échoué",
+				detail: "the Swarm service update failed",
 			};
 		} else {
 			verification.stages.build = { status: "failed", at };

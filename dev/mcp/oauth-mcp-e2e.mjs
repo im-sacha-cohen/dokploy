@@ -23,14 +23,14 @@ await login();
 const unauth = await mcp(null, "tools/list");
 const challengeHeader = unauth.headers.get("www-authenticate") ?? "";
 check(
-	"sans token → 401 + WWW-Authenticate resource_metadata",
+	"no token → 401 + WWW-Authenticate resource_metadata",
 	unauth.status === 401 && challengeHeader.includes("resource_metadata="),
 	challengeHeader,
 );
 const prmUrl = challengeHeader.match(/resource_metadata="([^"]+)"/)?.[1];
 const prm = await (await fetch(prmUrl)).json();
 check(
-	"métadonnées de ressource protégée (RFC 9728)",
+	"protected resource metadata (RFC 9728)",
 	prm.resource === MCP_URL && prm.authorization_servers?.length === 1,
 	JSON.stringify(prm),
 );
@@ -41,7 +41,7 @@ const asMeta = await (
 	)
 ).json();
 check(
-	"métadonnées du serveur d'autorisation (RFC 8414)",
+	"authorization server metadata (RFC 8414)",
 	asMeta.issuer === prm.authorization_servers[0] &&
 		asMeta.code_challenge_methods_supported?.includes("S256"),
 	`issuer=${asMeta.issuer}`,
@@ -53,7 +53,7 @@ await call("/api/mcp.updateSettings", {
 	enabled: true,
 	allowedScopes: ["mcp:read", "mcp:deploy", "mcp:config"],
 });
-check("MCP activé pour l'organisation", true, settings.organizationId);
+check("MCP enabled for the organization", true, settings.organizationId);
 
 // 3. Dynamic client registration
 const regRes = await fetch(asMeta.registration_endpoint, {
@@ -71,7 +71,7 @@ const regRes = await fetch(asMeta.registration_endpoint, {
 });
 const client = await regRes.json();
 check(
-	"enregistrement dynamique (client public)",
+	"dynamic registration (public client)",
 	regRes.ok && !!client.client_id && !client.client_secret,
 	`HTTP ${regRes.status} ${client.error_description ?? ""}`,
 );
@@ -86,7 +86,7 @@ const payload = JSON.parse(
 	Buffer.from(tokens.access_token.split(".")[1], "base64url").toString(),
 );
 check(
-	"token : audience = /mcp, durée ≤ 15 min, scope consenti",
+	"token: audience = /mcp, lifetime ≤ 15 min, consented scope",
 	payload.aud === MCP_URL &&
 		payload.exp - payload.iat <= 900 &&
 		payload.scope.split(" ").includes("mcp:read") &&
@@ -102,7 +102,7 @@ check(
 	list.status === 200 &&
 		toolNames.includes("dokploy_list_projects") &&
 		toolNames.length >= 19,
-	`${toolNames.length} outils, HTTP ${list.status} ${list.text.slice(0, 200)}`,
+	`${toolNames.length} tools, HTTP ${list.status} ${list.text.slice(0, 200)}`,
 );
 const legacyInit = await mcp(
 	tokens.access_token,
@@ -115,7 +115,7 @@ const legacyInit = await mcp(
 	{ modern: false },
 );
 check(
-	"client 2025-06-18 (repli sans état)",
+	"2025-06-18 client (stateless fallback)",
 	legacyInit.status === 200 && !!legacyInit.json?.result?.serverInfo,
 	`HTTP ${legacyInit.status}`,
 );
@@ -130,7 +130,7 @@ const apps = demo?.environments.flatMap((e) => e.applications) ?? [];
 check(
 	"dokploy_list_projects",
 	!!demo && apps.length >= 6,
-	`${projects.length} projet(s), ${apps.length} apps`,
+	`${projects.length} project(s), ${apps.length} apps`,
 );
 const appB = apps.find((a) => a.name === "b-wrong-port");
 const diag = await toolCall(
@@ -150,7 +150,7 @@ const getApp = await toolCall(tokens.access_token, "dokploy_get_application", {
 	applicationId: appD.applicationId,
 });
 check(
-	"dokploy_get_application ne renvoie aucune valeur de variable",
+	"dokploy_get_application returns no variable values",
 	getApp.status === 200 &&
 		!getApp.text.includes("REDACTED") &&
 		Array.isArray(
@@ -193,7 +193,7 @@ const deploy = await toolCall(
 	{ applicationId: appB.applicationId },
 );
 check(
-	"outil de déploiement sans scope mcp:deploy → 403 insufficient_scope",
+	"deploy tool without the mcp:deploy scope → 403 insufficient_scope",
 	deploy.status === 403 &&
 		(deploy.headers.get("www-authenticate") ?? "").includes(
 			"insufficient_scope",
@@ -206,7 +206,7 @@ const badInput = await toolCall(
 	{ applicationId: "../../etc/passwd" },
 );
 check(
-	"entrée invalide refusée",
+	"invalid input rejected",
 	badInput.json?.result?.isError === true || !!badInput.json?.error,
 	badInput.text.slice(0, 120),
 );
@@ -216,7 +216,7 @@ const unknownApp = await toolCall(
 	{ applicationId: "doesNotExist123" },
 );
 check(
-	"application inconnue → même réponse qu'un refus d'accès",
+	"unknown application → same response as an access denial",
 	unknownApp.json?.result?.isError === true &&
 		unknownApp.text.includes("not found or access denied"),
 );
@@ -231,11 +231,11 @@ const tampered = [
 	parts[2],
 ].join(".");
 check(
-	"token falsifié (scope élargi) → 401",
+	"tampered token (widened scope) → 401",
 	(await mcp(tampered, "tools/list")).status === 401,
 );
 check(
-	"token aléatoire → 401",
+	"random token → 401",
 	(await mcp("abc.def.ghi", "tools/list")).status === 401,
 );
 // fetch() cannot override Host, hence node:http (DNS-rebinding style request).
@@ -260,9 +260,9 @@ const hostStatus = await new Promise((resolve) => {
 	);
 	req.end("{}");
 });
-check("Host inconnu → refusé (421)", hostStatus === 421, `HTTP ${hostStatus}`);
+check("unknown Host → rejected (421)", hostStatus === 421, `HTTP ${hostStatus}`);
 check(
-	"Origin d'un autre site → refusé",
+	"Origin from another site → rejected",
 	(
 		await mcp(
 			tokens.access_token,
@@ -281,7 +281,7 @@ const malformed = await fetch(MCP_URL, {
 	body: "{not json",
 });
 check(
-	"JSON malformé → erreur sans crash",
+	"malformed JSON → error without crashing",
 	malformed.status >= 400 || (await malformed.text()).includes("error"),
 	`HTTP ${malformed.status}`,
 );
@@ -291,7 +291,7 @@ const parallel = await Promise.all(
 	Array.from({ length: 20 }, () => mcp(tokens.access_token, "tools/list")),
 );
 check(
-	"20 requêtes concurrentes",
+	"20 concurrent requests",
 	parallel.every((r) => r.status === 200),
 	parallel.map((r) => r.status).join(","),
 );
@@ -309,7 +309,7 @@ const refreshRes = await fetch(`${baseUrl}/api/auth/oauth2/token`, {
 });
 const refreshed = await refreshRes.json();
 check(
-	"refresh token → nouveau token valide",
+	"refresh token → new valid token",
 	refreshRes.ok &&
 		(await mcp(refreshed.access_token, "tools/list")).status === 200,
 	`HTTP ${refreshRes.status} ${refreshed.error ?? ""}`,
@@ -327,7 +327,7 @@ const restart = await toolCall(
 	{ applicationId: apps.find((a) => a.name === "a-healthy").applicationId },
 );
 check(
-	"avec mcp:deploy → dokploy_restart_application",
+	"with mcp:deploy → dokploy_restart_application",
 	restart.status === 200 &&
 		restart.json?.result?.structuredContent?.restarted === true,
 	restart.text.slice(0, 200),
@@ -336,19 +336,19 @@ check(
 // 10. Audit trail
 const audit = await call("/api/mcp.auditLog?limit=100", undefined, "GET");
 check(
-	"journal d'audit alimenté (outils, refus, consentement)",
+	"audit log populated (tools, denials, consent)",
 	audit.some(
 		(a) => a.name === "dokploy_diagnose_deployment" && a.outcome === "ok",
 	) &&
 		audit.some((a) => a.outcome === "denied") &&
 		audit.some((a) => a.name === "consent"),
-	`${audit.length} entrées`,
+	`${audit.length} entries`,
 );
 
 // 11. Revocation is immediate
 await call("/api/mcp.revokeGrant", { clientId: client.client_id });
 check(
-	"après révocation → le token d'accès encore valide est refusé",
+	"after revocation → the still-valid access token is rejected",
 	(await mcp(deployTokens.access_token, "tools/list")).status === 401,
 );
 const afterRevoke = await fetch(`${baseUrl}/api/auth/oauth2/token`, {
@@ -362,7 +362,7 @@ const afterRevoke = await fetch(`${baseUrl}/api/auth/oauth2/token`, {
 	}),
 });
 check(
-	"après révocation → refresh token refusé",
+	"after revocation → refresh token rejected",
 	!afterRevoke.ok,
 	`HTTP ${afterRevoke.status}`,
 );
@@ -372,7 +372,7 @@ const burst = await Promise.all(
 	Array.from({ length: 40 }, () => mcp("x.y.z", "tools/list")),
 );
 check(
-	"limitation de débit sur tokens invalides → 429",
+	"rate limiting on invalid tokens → 429",
 	burst.some((r) => r.status === 429),
 	`${burst.filter((r) => r.status === 429).length} × 429`,
 );

@@ -1345,14 +1345,43 @@ export const registerPlatformTools = ({
 	);
 
 	tool(
+		"dokploy_diagnose_service",
+		"mcp:read",
+		{
+			title: "Diagnose any service (Smart Deploy)",
+			description:
+				"Smart Deploy diagnosis of an application, a compose stack (each service checked, findings tagged with their service) or a database (image, data volume compatibility, ports, memory, disk). Returns the verdict, the root causes with evidence, and the fixes that can be applied with dokploy_apply_fix. Read-only.",
+			input: z.object({
+				...serviceInput,
+				probes: z
+					.boolean()
+					.default(true)
+					.describe("HTTP checks through Traefik (domains)"),
+			}),
+		},
+		async ({ serviceType, serviceId, probes }) =>
+			json(
+				await api("smartDeploy.diagnoseService", {
+					serviceType,
+					serviceId,
+					probes,
+				}),
+			),
+	);
+
+	tool(
 		"dokploy_apply_fix",
 		"mcp:deploy",
 		{
 			title: "Apply a Smart Deploy fix",
 			description:
-				"Applies a fix proposed by dokploy_diagnose_deployment (finding.recommendedFix.action, only when autoFixable): update_domain_port (also needs mcp:config), deploy_latest or redeploy_deployment. The server re-checks that the diagnosis still proposes it.",
+				"Applies a fix proposed by the diagnosis (finding.recommendedFix.action, only when autoFixable). Applications: update_domain_port, deploy_latest, redeploy_deployment. Compose stacks and databases: update_domain_port (compose) or redeploy_service (deploy again, or start when stopped). update_domain_port also needs mcp:config. The server re-checks that the current diagnosis still proposes it.",
 			input: z.object({
-				applicationId: ID,
+				serviceType: z.enum(SERVICE_TYPES).default("application"),
+				serviceId: ID.optional(),
+				applicationId: ID.optional().describe(
+					"Same as serviceId for an application",
+				),
 				action: z.discriminatedUnion("kind", [
 					z.object({
 						kind: z.literal("update_domain_port"),
@@ -1365,18 +1394,41 @@ export const registerPlatformTools = ({
 						kind: z.literal("redeploy_deployment"),
 						deploymentId: ID,
 					}),
+					z.object({ kind: z.literal("redeploy_service") }),
 				]),
 			}),
 			mutation: true,
 		},
-		async ({ applicationId, action }) => {
+		async ({ serviceType, serviceId, applicationId, action }) => {
 			if (
 				action.kind === "update_domain_port" &&
 				!principal.scopes.includes("mcp:config")
 			) {
 				return plainError("Insufficient scope: mcp:config is required.");
 			}
-			return json(await api("smartDeploy.applyFix", { applicationId, action }));
+			const id = serviceId ?? applicationId;
+			if (!id) throw new ToolError("serviceId is required.");
+			if (serviceType === "application") {
+				if (action.kind === "redeploy_service")
+					throw new ToolError(
+						"redeploy_service applies to compose stacks and databases.",
+					);
+				return json(
+					await api("smartDeploy.applyFix", { applicationId: id, action }),
+				);
+			}
+			if (
+				action.kind === "deploy_latest" ||
+				action.kind === "redeploy_deployment"
+			)
+				throw new ToolError(`${action.kind} applies to applications only.`);
+			return json(
+				await api("smartDeploy.applyServiceFix", {
+					serviceType,
+					serviceId: id,
+					action,
+				}),
+			);
 		},
 	);
 

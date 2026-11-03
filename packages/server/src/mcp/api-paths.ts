@@ -102,6 +102,8 @@ export const MCP_API_PATHS = [
 	"smartDeploy.preflight",
 	"smartDeploy.getDeploymentTimeline",
 	"smartDeploy.applyFix",
+	"smartDeploy.diagnoseService",
+	"smartDeploy.applyServiceFix",
 ] as const;
 
 export type McpApiPath = (typeof MCP_API_PATHS)[number];

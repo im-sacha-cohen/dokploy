@@ -79,7 +79,21 @@ const Hop = ({ hop }: { hop: ChainHop }) => (
 	</div>
 );
 
-const ago = (iso: string) => {
+/** Domain → Traefik → routed port → container, as a row of hops. */
+export const ChainHops = ({ hops }: { hops: ChainHop[] }) => (
+	<div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:flex-row xl:items-center">
+		{hops.map((hop, index) => (
+			<div key={hop.key} className="flex min-w-0 flex-1 items-center gap-2">
+				{index > 0 && (
+					<ArrowRight className="hidden size-4 shrink-0 text-muted-foreground xl:block" />
+				)}
+				<Hop hop={hop} />
+			</div>
+		))}
+	</div>
+);
+
+export const ago = (iso: string) => {
 	const seconds = Math.max(
 		0,
 		Math.round((Date.now() - new Date(iso).getTime()) / 1000),
@@ -130,19 +144,7 @@ export const NetworkChain = ({ applicationId }: { applicationId: string }) => {
 				)}
 				{chains.map((chain) => (
 					<div key={chain.domain.domainId} className="flex flex-col gap-2">
-						<div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:flex-row xl:items-center">
-							{chain.hops.map((hop, index) => (
-								<div
-									key={hop.key}
-									className="flex min-w-0 flex-1 items-center gap-2"
-								>
-									{index > 0 && (
-										<ArrowRight className="hidden size-4 shrink-0 text-muted-foreground xl:block" />
-									)}
-									<Hop hop={hop} />
-								</div>
-							))}
-						</div>
+						<ChainHops hops={chain.hops} />
 						{chain.fix && (
 							<div className="flex flex-wrap items-center gap-2 text-sm">
 								<span className="text-red-700 dark:text-red-300">

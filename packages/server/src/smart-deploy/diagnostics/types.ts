@@ -9,7 +9,24 @@ export const DIAGNOSTIC_CODES = [
 	"REVERSE_PROXY_UNREACHABLE",
 	"IMAGE_VERSION_MISMATCH",
 	"GIT_COMMIT_OUTDATED",
+	"IMAGE_PULL_FAILED",
+	"OUT_OF_MEMORY",
+	"DISK_FULL",
+	"DATA_DIRECTORY_INCOMPATIBLE",
+	"EXTERNAL_PORT_UNAVAILABLE",
+	"CONFIG_NOT_APPLIED",
+	"SERVICE_STOPPED",
 ] as const;
+
+export const DATABASE_TYPES = [
+	"postgres",
+	"mysql",
+	"mariadb",
+	"mongo",
+	"redis",
+] as const;
+export type DatabaseType = (typeof DATABASE_TYPES)[number];
+export type TargetType = "application" | "compose" | DatabaseType;
 
 export type DiagnosticCode = (typeof DIAGNOSTIC_CODES)[number];
 
@@ -45,7 +62,9 @@ export type FixAction =
 	| { kind: "update_domain_port"; domainId: string; host: string; port: number }
 	| { kind: "set_environment_variables"; keys: string[] }
 	| { kind: "deploy_latest" }
-	| { kind: "redeploy_deployment"; deploymentId: string };
+	| { kind: "redeploy_deployment"; deploymentId: string }
+	/** Deploy a database or compose stack again with its current configuration. */
+	| { kind: "redeploy_service" };
 
 export interface RecommendedFix {
 	summary: string;
@@ -66,6 +85,8 @@ export interface Finding {
 	autoFixable: boolean;
 	/** Findings this one is a consequence of. */
 	causedBy?: DiagnosticCode[];
+	/** Compose service the finding is about (compose stacks only). */
+	service?: string;
 }
 
 export interface DomainFact {
@@ -74,6 +95,8 @@ export interface DomainFact {
 	port: number | null;
 	path: string | null;
 	https: boolean;
+	/** Compose service the domain routes to. */
+	serviceName?: string | null;
 }
 
 export interface PublishedPortFact {
@@ -109,9 +132,13 @@ export interface ContainerHealthFact {
 export interface ContainerFact {
 	id: string;
 	imageId?: string;
+	/** Image reference the container was created from. */
+	image?: string;
 	startedAt: string;
 	uptimeSeconds: number;
 	health: ContainerHealthFact;
+	oomKilled?: boolean;
+	restartCount?: number;
 }
 
 export interface ListeningSocket {
@@ -158,11 +185,13 @@ export interface VersionFacts {
 export interface DiagnosticContext {
 	now: Date;
 	target: {
-		type: "application";
+		type: TargetType;
 		id: string;
 		name: string;
 		appName: string;
 		serverId: string | null;
+		/** Compose service, when the context describes one service of a stack. */
+		service?: string;
 	};
 	config: {
 		domains: DomainFact[];
@@ -180,12 +209,47 @@ export interface DiagnosticContext {
 	logs?: string[];
 	envExampleKeys?: string[];
 	version?: VersionFacts;
+	database?: DatabaseFacts;
+	/** Logs of the latest tasks that ran the configured image (databases), when the service runs another one. */
+	previousAttemptLogs?: string[];
+	/** Restarts of the service's last container, even when it is not running. */
+	restartCount?: number;
 	collectionErrors: { source: EvidenceSource; message: string }[];
+}
+
+export interface DatabaseFacts {
+	engine: DatabaseType;
+	/** Port the engine listens on inside the container. */
+	defaultPort: number;
+	/** Host port Dokploy is asked to publish, if any. */
+	externalPort: number | null;
+	/** Image set in Dokploy. */
+	configuredImage: string;
+	/** Registry answer when the configured image is not on the server. */
+	imageUnavailable?: string;
 }
 
 export type Rule = (ctx: DiagnosticContext) => Finding | Finding[] | null;
 
-export type DiagnosticVerdict = "healthy" | "degraded" | "down" | "unknown";
+/** One service of a compose stack, as shown in the report. */
+export interface ComposeServiceFacts {
+	name: string;
+	verdict: DiagnosticVerdict;
+	state: string | null;
+	running: boolean;
+	image: string | null;
+	restartCount: number | null;
+	health: ContainerHealthFact["status"] | null;
+	listening: ListeningSocket[] | null;
+	imageExposedPorts: number[] | null;
+}
+
+export type DiagnosticVerdict =
+	| "healthy"
+	| "degraded"
+	| "down"
+	| "stopped"
+	| "unknown";
 
 export interface DiagnosticReport {
 	generatedAt: string;
@@ -196,11 +260,17 @@ export interface DiagnosticReport {
 		latestDeploymentStatus: string | null;
 		runningTasks: number | null;
 		desiredReplicas: number | null;
+		/** False when the Swarm service does not exist (never deployed). */
+		serviceExists?: boolean | null;
 		listening: ListeningSocket[] | null;
 		imageExposedPorts: number[] | null;
 		domains: DomainFact[];
 		publishedPorts: PublishedPortFact[];
 		probes: ProbeResult[];
+		/** Compose stacks: one entry per service. */
+		services?: ComposeServiceFacts[];
+		/** Databases: engine, ports and configured vs running image. */
+		database?: DatabaseFacts & { runningImage: string | null };
 	};
 	collectionErrors: DiagnosticContext["collectionErrors"];
 }

@@ -1,78 +1,77 @@
-# Bilan du fork — Smart Deploy + MCP natif
+# Fork summary — Smart Deploy + native MCP
 
-État au 02/11/2026, branche `feat/smart-deploy-mcp` : commits locaux uniquement, **rien n'a été poussé**.
+State as of 2026-11-02, branch `feat/smart-deploy-mcp`: local commits only, **nothing has been pushed**.
 
-## Critères de réussite du brief
+## Success criteria from the brief
 
-| Critère | Statut | Preuve |
+| Criterion | Status | Evidence |
 |---|---|---|
-| Dokploy démarre en local sur le Mac | ✅ | devbox Docker-in-Docker (`scripts/dev-start.sh`), Docker Desktop non modifié ; redémarrage complet validé |
-| Accès à l'interface web | ✅ | http://localhost:3000, compte de test (`dev/.env`) |
-| Déployer une application de test | ✅ | apps de démo A–G ; Deploy Latest depuis l'assistant (navigateur) |
-| Identifier le commit réellement exécuté | ✅ | carte « Current deployment » : commit prouvé par l'image exacte ; scénario E 22/22 |
-| Diagnostiquer une erreur de port | ✅ | B : `PORT_MISMATCH` (domaine 80, écoute 3000), correctif appliqué en 1 clic après confirmation : 502 → 200 |
-| Diagnostiquer un conteneur qui crash | ✅ | C : `CONTAINER_CRASH_LOOP` avec code de sortie et logs |
-| Comprendre pourquoi un déploiement échoue | ✅ | D : variables manquantes nommées depuis les logs ; G : écoute sur localhost ; `BUILD_FAILED` avec les lignes d'erreur |
-| Timeline de déploiement | ✅ | 6 étapes observées (build → reachable), en direct dans l'UI et via `dokploy_get_deployment_status` |
-| Activer un serveur MCP | ✅ | Settings › AI Integrations (owner/admin), test de connexion 4/4 |
-| Connecter un client MCP compatible | ⚠️ partiel | client scripté conforme à la spec (protocole 2026-07-28 et 2025-06-18), 36/36. **Aucun client tiers réel testé** : la commande pour Claude Code est fournie, mais modifier ta configuration Claude Code et te connecter dans le navigateur te reviennent |
-| S'authentifier via OAuth | ✅ | Authorization Code + PKCE, découverte RFC 9728/8414, reprise après login |
-| Consulter et accepter les permissions | ✅ | page de consentement testée dans le navigateur ; cases réellement appliquées |
-| Un agent consulte mes projets autorisés | ✅ | `dokploy_list_projects` = exactement ce que l'UI montre au même utilisateur (27/27 isolation) |
-| Un agent diagnostique un déploiement | ✅ | `dokploy_diagnose_deployment` |
-| Un agent ne peut pas déployer sans permission | ✅ | 403 `insufficient_scope` sans `mcp:deploy` ; refus sur les apps non accordées, même avec le scope |
-| Révoquer l'accès d'un agent | ✅ | révocation immédiate, token encore valide refusé (testé deux fois) |
-| Tests de non-régression essentiels | ✅ avec réserve | 1661 tests passés ; les seuls échecs (4) sont les timeouts sous charge de `backup-files`, déjà présents avant le fork, qui passent seuls (voir `TESTING.md`) |
+| Dokploy starts locally on the Mac | ✅ | Docker-in-Docker devbox (`scripts/dev-start.sh`), Docker Desktop untouched; full restart validated |
+| Access to the web interface | ✅ | http://localhost:3000, test account (`dev/.env`) |
+| Deploy a test application | ✅ | demo apps A–G; Deploy Latest from the assistant (browser) |
+| Identify the commit actually running | ✅ | "Current deployment" card: commit proven by the exact image; scenario E 22/22 |
+| Diagnose a port error | ✅ | B: `PORT_MISMATCH` (domain 80, listening on 3000), fix applied in 1 click after confirmation: 502 → 200 |
+| Diagnose a crashing container | ✅ | C: `CONTAINER_CRASH_LOOP` with exit code and logs |
+| Understand why a deployment fails | ✅ | D: missing variables named from the logs; G: listening on localhost; `BUILD_FAILED` with the error lines |
+| Deployment timeline | ✅ | 6 observed steps (build → reachable), live in the UI and via `dokploy_get_deployment_status` |
+| Enable an MCP server | ✅ | Settings › AI Integrations (owner/admin), connection test 4/4 |
+| Connect a compatible MCP client | ⚠️ partial | scripted spec-compliant client (protocol 2026-07-28 and 2025-06-18), 36/36. **No real third-party client tested**: the command for Claude Code is provided, but changing your Claude Code configuration and logging in through the browser is up to you |
+| Authenticate via OAuth | ✅ | Authorization Code + PKCE, RFC 9728/8414 discovery, resume after login |
+| Review and accept permissions | ✅ | consent page tested in the browser; checkboxes actually enforced |
+| An agent lists my authorized projects | ✅ | `dokploy_list_projects` = exactly what the UI shows the same user (27/27 isolation) |
+| An agent diagnoses a deployment | ✅ | `dokploy_diagnose_deployment` |
+| An agent cannot deploy without permission | ✅ | 403 `insufficient_scope` without `mcp:deploy`; refused on non-granted apps, even with the scope |
+| Revoke an agent's access | ✅ | immediate revocation, a still-valid token is refused (tested twice) |
+| Essential non-regression tests | ✅ with a caveat | 1661 tests passed; the only failures (4) are `backup-files` timeouts under load, already present before the fork, which pass when run alone (see `TESTING.md`) |
 
-## Ce qui a été livré
+## What was delivered
 
-| Phase | Commit | Contenu |
+| Phase | Commit | Content |
 |---|---|---|
-| 1–2 | `4402bf3` | audit, devbox, apps de démo |
-| 3 | `4865da3` | moteur de diagnostic déterministe |
-| 4 | `ad13de3` | suivi de version, vérification par étapes, redeploy/rollback/restart distincts |
-| 5 | `b42b08b` | onglet Smart Deploy : preflight, timeline, corrections confirmées |
-| 6 | `a5ba6c5` | serveur MCP, OAuth 2.1 sur better-auth, consentement, AI Integrations |
-| 7 | Phase 7 | tests de permissions et d'isolation, stabilité, bilan |
+| 1–2 | `4402bf3` | audit, devbox, demo apps |
+| 3 | `4865da3` | deterministic diagnostics engine |
+| 4 | `ad13de3` | version tracking, step-by-step verification, distinct redeploy/rollback/restart |
+| 5 | `b42b08b` | Smart Deploy tab: preflight, timeline, confirmed fixes |
+| 6 | `a5ba6c5` | MCP server, OAuth 2.1 on better-auth, consent, AI Integrations |
+| 7 | Phase 7 | permission and isolation tests, stability, summary |
 
-Documentation : `ARCHITECTURE_AUDIT`, `LOCAL_DEVELOPMENT`, `DEPLOYMENT_DIAGNOSTICS`, `SMART_DEPLOY_ENGINE`, `MCP_ARCHITECTURE`, `MCP_SECURITY`, `TESTING`, `IMPLEMENTATION_PROGRESS`.
+Documentation: `ARCHITECTURE_AUDIT`, `LOCAL_DEVELOPMENT`, `DEPLOYMENT_DIAGNOSTICS`, `SMART_DEPLOY_ENGINE`, `MCP_ARCHITECTURE`, `MCP_SECURITY`, `TESTING`, `IMPLEMENTATION_PROGRESS`.
 
-## Rejouer tous les tests
+## Re-running all the tests
 
 ```bash
 ./scripts/dev-start.sh
-./scripts/dev-test.sh            # suite Vitest complète (~7 min)
+./scripts/dev-test.sh            # full Vitest suite (~7 min)
 dev/phase7/run-all.sh            # diagnostics A–G, version E, isolation, OAuth+MCP
 ```
 
-## Limitations connues (consolidées)
+## Known limitations (consolidated)
 
-**Moteur de déploiement et diagnostics**
-- **Compose** (app F) et **previews** : non diagnostiqués ni suivis ; ils gardent le comportement upstream.
-- **Images sans `cat`** (distroless) : les sockets en écoute ne peuvent pas être lus ; le diagnostic se rabat sur `EXPOSE`, avec une confiance moyenne.
-- **Swarm multi-nœuds** : faits partiels quand la tâche tourne sur un autre nœud, signalés dans le rapport.
-- **Rebuild d'un commit précis** : non disponible. Rebuild reconstruit le dernier clone ; pour revenir à une version, utiliser Redeploy ou Rollback (5 images conservées, sans registre).
-- **SHA poussé par webhook** : non exploité ; le commit demandé est la tête de branche lue au déclenchement.
-- **Rapports de diagnostic** : non persistés, recalculés à la demande.
+**Deployment engine and diagnostics**
+- **Compose** (app F) and **previews**: not diagnosed or tracked; they keep upstream behavior.
+- **Images without `cat`** (distroless): listening sockets can't be read; the diagnosis falls back to `EXPOSE`, with medium confidence.
+- **Multi-node Swarm**: partial facts when the task runs on another node, flagged in the report.
+- **Rebuilding a specific commit**: not available. Rebuild rebuilds the latest clone; to go back to a version, use Redeploy or Rollback (5 images kept, no registry).
+- **SHA pushed by webhook**: not used; the requested commit is the branch head read at trigger time.
+- **Diagnostic reports**: not persisted, recomputed on demand.
 
-**MCP et OAuth**
-- **Client ID Metadata Documents** : non pris en charge, l'enregistrement dynamique (RFC 7591) est utilisé.
-- **Clients enregistrés jamais autorisés** : aucune purge automatique.
-- **Rate limiting en mémoire** : à remplacer par un stockage partagé en multi-instance.
-- **Tokens** : pas de DPoP, refresh token non lié à l'appareil.
-- **Client distant** (claude.ai) : nécessite un tunnel HTTPS public, non mis en place sans ton accord.
-- **Dokploy Cloud** : actions de déploiement MCP refusées.
+**MCP and OAuth**
+- **Client ID Metadata Documents**: not supported, dynamic registration (RFC 7591) is used.
+- **Registered clients that were never authorized**: no automatic purge.
+- **In-memory rate limiting**: to be replaced by shared storage when running multiple instances.
+- **Tokens**: no DPoP, refresh token not bound to the device.
+- **Remote client** (claude.ai): needs a public HTTPS tunnel, not set up without your approval.
+- **Dokploy Cloud**: MCP deployment actions are refused.
 
-**Langue**
-- Interface en anglais (comme Dokploy), mais constats, raisons et recommandations générés côté serveur en français. **Décision à prendre** : passer ces messages en anglais, ou les rendre traduisibles.
+**Language**
+- Everything is in English, like Dokploy (which removed its i18n): interface, server-generated findings, docs and dev tooling.
 
-**Constaté dans upstream, non corrigé**
-- Au démarrage, le setup tente de recréer Traefik et échoue sur une entrée DNS Swarm existante (`dokploy-traefik-previous`). Traefik reste en service.
-- Tests `backup-files` instables sous charge (timeout de 5 s).
+**Found in upstream, not fixed**
+- At startup, the setup tries to recreate Traefik and fails on an existing Swarm DNS entry (`dokploy-traefik-previous`). Traefik stays in service.
+- Flaky `backup-files` tests under load (5 s timeout).
 
-## Décisions qui te reviennent
+## Decisions that are yours to make
 
-1. **Pousser** la branche vers ton fork `im-sacha-cohen/dokploy` (public) : rien n'a été poussé.
-2. **Langue** des messages générés par le serveur.
-3. **Tunnel HTTPS** temporaire pour tester claude.ai ou un client distant réel.
-4. **Proposer upstream** ou garder le fork : la licence des dossiers `/proprietary` n'est pas touchée, mais le journal d'audit MCP est séparé de l'audit Dokploy pour cette raison.
+1. **Push** the branch to your fork `im-sacha-cohen/dokploy` (public): nothing has been pushed.
+2. **Temporary HTTPS tunnel** to test claude.ai or a real remote client.
+3. **Propose upstream** or keep the fork: the license of the `/proprietary` folders is untouched, but the MCP audit log is kept separate from Dokploy's audit for that reason.

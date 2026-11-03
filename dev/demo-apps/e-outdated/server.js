@@ -12,4 +12,6 @@ http
 		}
 		res.end(`e-outdated ${version}\n`);
 	})
-	.listen(port, "0.0.0.0", () => console.log(`e-outdated ${version} on 0.0.0.0:${port}`));
+	.listen(port, "0.0.0.0", () =>
+		console.log(`e-outdated ${version} on 0.0.0.0:${port}`),
+	);

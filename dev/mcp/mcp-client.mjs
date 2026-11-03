@@ -99,7 +99,7 @@ export const authorize = async (
 		"";
 	const consentUrl = new URL(location, baseUrl);
 	check(
-		"authorize → redirection vers la page de consentement",
+		"authorize → redirect to the consent page",
 		consentUrl.pathname === "/oauth/consent",
 		consentUrl.pathname,
 	);
@@ -117,7 +117,7 @@ export const authorize = async (
 	});
 	const redirect = new URL(consent.url ?? consent.redirect_uri);
 	check(
-		"consentement → code renvoyé à l'URI enregistrée",
+		"consent → code sent back to the registered URI",
 		redirect.origin + redirect.pathname === REDIRECT_URI &&
 			redirect.searchParams.get("state") === state,
 	);
@@ -137,7 +137,7 @@ export const authorize = async (
 	});
 	const tokens = await tokenRes.json();
 	check(
-		"échange du code avec PKCE",
+		"code exchange with PKCE",
 		tokenRes.ok && !!tokens.access_token,
 		`HTTP ${tokenRes.status} ${tokens.error ?? ""}`,
 	);
@@ -153,14 +153,14 @@ export const authorize = async (
 			resource: MCP_URL,
 		}),
 	});
-	check("rejeu du code refusé", !replay.ok, `HTTP ${replay.status}`);
+	check("code replay rejected", !replay.ok, `HTTP ${replay.status}`);
 	return tokens;
 };
 
 export const summarize = () => {
 	const failed = results.filter((r) => !r.ok);
 	console.log(
-		`\n${results.length - failed.length}/${results.length} vérifications réussies`,
+		`\n${results.length - failed.length}/${results.length} checks passed`,
 	);
 	process.exitCode = failed.length ? 1 : 0;
 };

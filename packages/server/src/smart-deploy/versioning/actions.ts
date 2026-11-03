@@ -25,7 +25,7 @@ const appendLog = (serverId: string | null, logPath: string, line: string) =>
 
 const noBuildVerification = () => {
 	const v = emptyVerification();
-	v.stages.build = { status: "not_applicable", detail: "aucune construction" };
+	v.stages.build = { status: "not_applicable", detail: "no build" };
 	return v;
 };
 

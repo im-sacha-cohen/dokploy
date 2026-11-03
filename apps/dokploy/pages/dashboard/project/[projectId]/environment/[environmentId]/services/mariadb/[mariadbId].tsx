@@ -14,6 +14,8 @@ import { toast } from "sonner";
 import superjson from "superjson";
 import { ShowEnvironment } from "@/components/dashboard/application/environment/show-environment";
 import { ShowDockerLogs } from "@/components/dashboard/application/logs/show";
+import { ServiceHealthBanner } from "@/components/dashboard/application/smart-deploy/service-health-banner";
+import { ShowServiceSmartDeploy } from "@/components/dashboard/application/smart-deploy/show-service-smart-deploy";
 import { DeleteService } from "@/components/dashboard/compose/delete-service";
 import { ShowBackups } from "@/components/dashboard/database/backups/show-backups";
 import { ShowExternalMariadbCredentials } from "@/components/dashboard/mariadb/general/show-external-mariadb-credentials";
@@ -50,7 +52,13 @@ import { appRouter } from "@/server/api/root";
 import { api } from "@/utils/api";
 import { useWhitelabeling } from "@/utils/hooks/use-whitelabeling";
 
-type TabState = "projects" | "monitoring" | "settings" | "backups" | "advanced";
+type TabState =
+	| "projects"
+	| "monitoring"
+	| "settings"
+	| "backups"
+	| "advanced"
+	| "smart-deploy";
 
 const Mariadb = (
 	props: InferGetServerSidePropsType<typeof getServerSideProps>,
@@ -211,18 +219,31 @@ const Mariadb = (
 										router.push(newPath, undefined, { shallow: true });
 									}}
 								>
+									{permissions?.service.read && (
+										<div className="mb-4">
+											<ServiceHealthBanner
+												serviceType="mariadb"
+												serviceId={mariadbId}
+											/>
+										</div>
+									)}
 									<div className="flex flex-row items-center justify-between w-full gap-4 overflow-x-auto">
 										<TabsList
 											className={cn(
 												"md:grid md:w-fit max-md:overflow-y-scroll justify-start",
 												isCloud && data?.serverId
-													? "md:grid-cols-6"
+													? "md:grid-cols-[repeat(7,auto)]"
 													: data?.serverId
-														? "md:grid-cols-5"
-														: "md:grid-cols-6",
+														? "md:grid-cols-[repeat(6,auto)]"
+														: "md:grid-cols-[repeat(7,auto)]",
 											)}
 										>
 											<TabsTrigger value="general">General</TabsTrigger>
+											{permissions?.service.read && (
+												<TabsTrigger value="smart-deploy">
+													Smart Deploy
+												</TabsTrigger>
+											)}
 											{permissions?.envVars.read && (
 												<TabsTrigger value="environment">
 													Environment
@@ -244,6 +265,14 @@ const Mariadb = (
 										</TabsList>
 									</div>
 
+									{permissions?.service.read && (
+										<TabsContent value="smart-deploy" className="w-full pt-2.5">
+											<ShowServiceSmartDeploy
+												serviceType="mariadb"
+												serviceId={mariadbId}
+											/>
+										</TabsContent>
+									)}
 									<TabsContent value="general">
 										<div className="flex flex-col gap-4 pt-2.5">
 											<ShowGeneralMariadb mariadbId={mariadbId} />

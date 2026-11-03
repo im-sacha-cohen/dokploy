@@ -66,7 +66,8 @@ export const HealthBanner = ({ applicationId }: { applicationId: string }) => {
 				<div className="mt-2 flex flex-wrap gap-2">
 					{cause.autoFixable &&
 						action &&
-						action.kind !== "set_environment_variables" && (
+						action.kind !== "set_environment_variables" &&
+						action.kind !== "redeploy_service" && (
 							<ApplyFixButton
 								applicationId={applicationId}
 								action={action}

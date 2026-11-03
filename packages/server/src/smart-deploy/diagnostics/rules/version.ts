@@ -1,7 +1,7 @@
 import type { Finding, Rule } from "../types";
 
 const short = (sha: string | null | undefined) =>
-	sha ? sha.slice(0, 7) : "inconnu";
+	sha ? sha.slice(0, 7) : "unknown";
 
 export const imageVersionMismatchRule: Rule = (ctx) => {
 	const latest = ctx.version?.latest;
@@ -16,33 +16,33 @@ export const imageVersionMismatchRule: Rule = (ctx) => {
 	const evidence: Finding["evidence"] = [
 		{
 			source: "deployment",
-			summary: `Dernier déploiement ${latest.deploymentId} (« done ») : image ${latest.imageId.slice(7, 19)}, commit ${short(latest.builtCommitSha)}`,
+			summary: `Last deployment ${latest.deploymentId} ("done"): image ${latest.imageId.slice(7, 19)}, commit ${short(latest.builtCommitSha)}`,
 		},
 		{
 			source: "docker_container",
-			summary: `Image du conteneur en cours d'exécution : ${runningImage.slice(7, 19)}${running ? ` (déploiement ${running.deploymentId}, commit ${short(running.builtCommitSha)})` : " (ne correspond à aucun déploiement suivi)"}`,
+			summary: `Running container image: ${runningImage.slice(7, 19)}${running ? ` (deployment ${running.deploymentId}, commit ${short(running.builtCommitSha)})` : " (matches no tracked deployment)"}`,
 		},
 	];
 
 	return {
 		code: "IMAGE_VERSION_MISMATCH",
-		title: "Le conteneur n'exécute pas l'image du dernier déploiement",
+		title: "Container is not running the latest deployment's image",
 		description:
-			"Le dernier déploiement est marqué terminé, mais le conteneur actif tourne avec une autre image.",
+			"The last deployment is marked done, but the active container runs a different image.",
 		severity: "error",
 		confidence: "high",
 		evidence,
 		probableCause:
-			"La mise à jour du service n'a pas été appliquée (tâches de la nouvelle version en échec, retour arrière automatique de Swarm) ou l'image a été modifiée après le déploiement.",
+			"The service update was not applied (tasks of the new version failed, Swarm rolled back automatically) or the image was changed after the deployment.",
 		recommendedFix: latest.imageTag
 			? {
-					summary: `Redéployer l'image du déploiement ${latest.deploymentId} et vérifier les logs si elle ne démarre pas.`,
+					summary: `Redeploy the image of deployment ${latest.deploymentId} and check the logs if it does not start.`,
 					action: {
 						kind: "redeploy_deployment",
 						deploymentId: latest.deploymentId,
 					},
 				}
-			: { summary: "Relancer un déploiement et vérifier les logs du service." },
+			: { summary: "Deploy again and check the service logs." },
 		risk: "low",
 		autoFixable: !!latest.imageTag,
 	};
@@ -56,24 +56,24 @@ export const gitCommitOutdatedRule: Rule = (ctx) => {
 
 	return {
 		code: "GIT_COMMIT_OUTDATED",
-		title: `La version déployée n'est pas le dernier commit de ${head.branch}`,
-		description: `Le conteneur exécute ${short(running.builtCommitSha)} ; la branche ${head.branch} pointe sur ${short(head.sha)} (vérifié le ${head.checkedAt}).`,
+		title: `Deployed version is not the latest commit on ${head.branch}`,
+		description: `The container runs ${short(running.builtCommitSha)}; branch ${head.branch} points to ${short(head.sha)} (checked at ${head.checkedAt}).`,
 		severity: "warning",
 		confidence: "high",
 		evidence: [
 			{
 				source: "deployment",
-				summary: `Commit construit par le déploiement ${running.deploymentId} (image en cours d'exécution) : ${running.builtCommitSha}`,
+				summary: `Commit built by deployment ${running.deploymentId} (running image): ${running.builtCommitSha}`,
 			},
 			{
 				source: "repository",
-				summary: `Tête distante de ${head.branch} : ${head.sha}`,
+				summary: `Remote head of ${head.branch}: ${head.sha}`,
 			},
 		],
 		probableCause:
-			"Des commits ont été poussés depuis le dernier déploiement, ou un déploiement plus ancien a été restauré.",
+			"Commits were pushed since the last deployment, or an older deployment was restored.",
 		recommendedFix: {
-			summary: `Déployer le dernier commit (${short(head.sha)}) avec « Deploy Latest ».`,
+			summary: `Deploy the latest commit (${short(head.sha)}) with "Deploy Latest".`,
 			action: { kind: "deploy_latest" },
 		},
 		risk: "medium",

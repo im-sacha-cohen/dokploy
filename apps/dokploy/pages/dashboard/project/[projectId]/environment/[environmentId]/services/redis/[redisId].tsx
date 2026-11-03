@@ -14,6 +14,8 @@ import { toast } from "sonner";
 import superjson from "superjson";
 import { ShowEnvironment } from "@/components/dashboard/application/environment/show-environment";
 import { ShowDockerLogs } from "@/components/dashboard/application/logs/show";
+import { ServiceHealthBanner } from "@/components/dashboard/application/smart-deploy/service-health-banner";
+import { ShowServiceSmartDeploy } from "@/components/dashboard/application/smart-deploy/show-service-smart-deploy";
 import { DeleteService } from "@/components/dashboard/compose/delete-service";
 import { ContainerFreeMonitoring } from "@/components/dashboard/monitoring/free/container/show-free-container-monitoring";
 import { ContainerPaidMonitoring } from "@/components/dashboard/monitoring/paid/container/show-paid-container-monitoring";
@@ -49,7 +51,12 @@ import { appRouter } from "@/server/api/root";
 import { api } from "@/utils/api";
 import { useWhitelabeling } from "@/utils/hooks/use-whitelabeling";
 
-type TabState = "projects" | "monitoring" | "settings" | "advanced";
+type TabState =
+	| "projects"
+	| "monitoring"
+	| "settings"
+	| "advanced"
+	| "smart-deploy";
 
 const Redis = (
 	props: InferGetServerSidePropsType<typeof getServerSideProps>,
@@ -210,18 +217,31 @@ const Redis = (
 										router.push(newPath, undefined, { shallow: true });
 									}}
 								>
+									{permissions?.service.read && (
+										<div className="mb-4">
+											<ServiceHealthBanner
+												serviceType="redis"
+												serviceId={redisId}
+											/>
+										</div>
+									)}
 									<div className="flex flex-row items-center justify-between w-full gap-4 overflow-x-auto">
 										<TabsList
 											className={cn(
 												"md:grid md:w-fit max-md:overflow-y-scroll justify-start",
 												isCloud && data?.serverId
-													? "md:grid-cols-5"
+													? "md:grid-cols-[repeat(6,auto)]"
 													: data?.serverId
-														? "md:grid-cols-4"
-														: "md:grid-cols-5",
+														? "md:grid-cols-[repeat(5,auto)]"
+														: "md:grid-cols-[repeat(6,auto)]",
 											)}
 										>
 											<TabsTrigger value="general">General</TabsTrigger>
+											{permissions?.service.read && (
+												<TabsTrigger value="smart-deploy">
+													Smart Deploy
+												</TabsTrigger>
+											)}
 											{permissions?.envVars.read && (
 												<TabsTrigger value="environment">
 													Environment
@@ -242,6 +262,14 @@ const Redis = (
 										</TabsList>
 									</div>
 
+									{permissions?.service.read && (
+										<TabsContent value="smart-deploy" className="w-full pt-2.5">
+											<ShowServiceSmartDeploy
+												serviceType="redis"
+												serviceId={redisId}
+											/>
+										</TabsContent>
+									)}
 									<TabsContent value="general">
 										<div className="flex flex-col gap-4 pt-2.5">
 											<ShowGeneralRedis redisId={redisId} />

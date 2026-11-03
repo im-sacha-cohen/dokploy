@@ -157,24 +157,24 @@ export const getVersionStatus = async (
 	let versionReason: string;
 	if (!source.isGit) {
 		versionState = "not_applicable";
-		versionReason = "La source n'est pas un dépôt Git.";
+		versionReason = "The source is not a Git repository.";
 	} else if (latestRemote.status !== "ok") {
 		versionState = "unknown";
 		versionReason =
 			latestRemote.status === "error"
-				? `Dernier commit distant non vérifié : ${latestRemote.reason}`
-				: "Dernier commit distant non vérifié.";
+				? `Latest remote commit not checked: ${latestRemote.reason}`
+				: "Latest remote commit not checked.";
 	} else if (!runningCommitSha) {
 		versionState = "unknown";
 		versionReason = live.runningImageId
-			? "L'image en cours d'exécution ne correspond à aucun déploiement suivi : commit exécuté inconnu."
-			: "Aucun conteneur en cours d'exécution.";
+			? "The running image matches no tracked deployment: running commit unknown."
+			: "No container running.";
 	} else if (runningCommitSha === latestRemote.sha) {
 		versionState = "up_to_date";
-		versionReason = "Le commit exécuté est le dernier commit de la branche.";
+		versionReason = "The running commit is the latest commit on the branch.";
 	} else {
 		versionState = "outdated";
-		versionReason = `La branche ${latestRemote.branch} a avancé : ${latestRemote.sha.slice(0, 7)} sur le dépôt, ${runningCommitSha.slice(0, 7)} en cours d'exécution.`;
+		versionReason = `Branch ${latestRemote.branch} has moved on: ${latestRemote.sha.slice(0, 7)} in the repository, ${runningCommitSha.slice(0, 7)} running.`;
 	}
 
 	let recommendedAction: RecommendedAction = "none";

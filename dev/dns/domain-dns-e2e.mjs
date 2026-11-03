@@ -77,11 +77,11 @@ try {
 		"GET",
 	);
 	const ip = context.serverIps[0];
-	check("contexte : fournisseur et IP du serveur", !!ip, `IP ${ip}`);
+	check("context: provider and server IP", !!ip, `IP ${ip}`);
 
 	const fqdn = `${LABEL}.${ZONE}`;
 	const before = await findRecord(fqdn);
-	check("le nom de test n'existe pas encore", before.length === 0, fqdn);
+	check("the test name does not exist yet", before.length === 0, fqdn);
 
 	const suggest = await call(
 		`/api/domainDns.suggest?${qs({
@@ -95,7 +95,7 @@ try {
 		"GET",
 	);
 	check(
-		"suggest : nom libre et valide",
+		"suggest: name free and valid",
 		suggest.requested?.status === "free" && suggest.requested.valid,
 		JSON.stringify(suggest.requested),
 	);
@@ -122,7 +122,7 @@ try {
 	);
 	const atProvider = await findRecord(fqdn);
 	check(
-		"createDomain : enregistrement A créé chez le fournisseur",
+		"createDomain: A record created at the provider",
 		created.record.created &&
 			atProvider.length === 1 &&
 			atProvider[0].type === "A" &&
@@ -130,7 +130,7 @@ try {
 		JSON.stringify(atProvider),
 	);
 	check(
-		"createDomain : domaine Dokploy créé avec ce nom",
+		"createDomain: Dokploy domain created with this name",
 		(await domains()).some(
 			(d) => d.domainId === created.domain.domainId && d.host === fqdn,
 		),
@@ -141,7 +141,7 @@ try {
 		"GET",
 	);
 	check(
-		"le domaine est marqué comme ayant un enregistrement créé par Dokploy",
+		"the domain is flagged as having a record created by Dokploy",
 		tracked.includes(created.domain.domainId),
 	);
 
@@ -165,7 +165,7 @@ try {
 		}),
 	);
 	check(
-		"même nom pointant déjà ici → réutilisé, pas de doublon",
+		"same name already pointing here → reused, no duplicate",
 		again.record.created === false && (await findRecord(fqdn)).length === 1,
 	);
 	const reusedInfo = await call(
@@ -174,7 +174,7 @@ try {
 		"GET",
 	);
 	check(
-		"un enregistrement réutilisé n'est jamais proposé à la suppression",
+		"a reused record is never offered for deletion",
 		reusedInfo === null,
 	);
 	await call("/api/domainDns.deleteDomain", {
@@ -183,7 +183,7 @@ try {
 	});
 	cleanup.pop();
 	check(
-		"supprimer le domaine réutilisant le nom garde l'enregistrement",
+		"deleting the domain that reuses the name keeps the record",
 		(await findRecord(fqdn)).length === 1,
 	);
 
@@ -193,7 +193,7 @@ try {
 		"GET",
 	);
 	check(
-		"recordForDomain : suppression proposée",
+		"recordForDomain: deletion offered",
 		info?.canDelete === true && info.name === fqdn,
 		JSON.stringify(info),
 	);
@@ -203,7 +203,7 @@ try {
 	});
 	cleanup.pop();
 	check(
-		"deleteDomain : domaine et enregistrement supprimés",
+		"deleteDomain: domain and record deleted",
 		removed.recordDeleted === true &&
 			(await findRecord(fqdn)).length === 0 &&
 			!(await domains()).some((d) => d.domainId === created.domain.domainId),
@@ -258,7 +258,7 @@ try {
 			);
 		}
 		check(
-			"MCP dokploy_create_domain avec dns : enregistrement et domaine créés",
+			"MCP dokploy_create_domain with dns: record and domain created",
 			data(mcpCreated).host === mcpFqdn &&
 				(await findRecord(mcpFqdn)).length === 1,
 			text(mcpCreated).slice(0, 200),
@@ -271,7 +271,7 @@ try {
 			elicit,
 		);
 		check(
-			"MCP dokploy_delete_domain : la confirmation mentionne l'enregistrement DNS",
+			"MCP dokploy_delete_domain: the confirmation mentions the DNS record",
 			result(ask).inputRequests?.confirm?.params?.message?.includes(
 				`DNS record ${mcpFqdn}`,
 			),
@@ -291,23 +291,23 @@ try {
 		);
 		cleanup.splice(-1, 1);
 		check(
-			"MCP dokploy_delete_domain confirmé : domaine et enregistrement supprimés",
+			"MCP dokploy_delete_domain confirmed: domain and record deleted",
 			data(done).recordDeleted === true &&
 				(await findRecord(mcpFqdn)).length === 0,
 			text(done).slice(0, 200),
 		);
 	} else {
-		console.log("(partie MCP ignorée : DOKPLOY_MCP_URL non défini)");
+		console.log("(MCP part skipped: DOKPLOY_MCP_URL not set)");
 	}
 } catch (error) {
-	check("exécution du scénario sans exception", false, error.stack);
+	check("scenario ran without exception", false, error.stack);
 } finally {
 	for (const fn of cleanup.reverse()) await fn().catch(() => {});
 	const leftovers = (await records()).filter((r) =>
 		r.name.toLowerCase().startsWith(LABEL),
 	);
 	check(
-		"aucun enregistrement de test laissé dans la zone",
+		"no test record left in the zone",
 		leftovers.length === 0,
 		leftovers.map((r) => r.name).join(", "),
 	);

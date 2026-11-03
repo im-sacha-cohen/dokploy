@@ -3,10 +3,10 @@ import type { DomainFact, Finding, ProbeResult, Rule } from "../types";
 import { LISTEN_GRACE_SECONDS } from "./runtime";
 
 const describeProbe = (probe: ProbeResult) =>
-	`${probe.kind === "router" ? "Traefik → domaine" : "Traefik → service"} ${probe.target} : ${
+	`${probe.kind === "router" ? "Traefik → domain" : "Traefik → service"} ${probe.target}: ${
 		probe.httpStatus !== undefined
 			? `HTTP ${probe.httpStatus}`
-			: (probe.error ?? "échec")
+			: (probe.error ?? "failed")
 	}${probe.detail ? ` (${probe.detail})` : ""}`;
 
 const pickCandidatePort = (reachable: number[], exposed: number[]) => {
@@ -37,34 +37,34 @@ export const portMismatchRule: Rule = (ctx) => {
 			const candidate = pickCandidatePort(reachable, exposed);
 			findings.push({
 				code: "PORT_MISMATCH",
-				title: `Le domaine ${domain.host} cible le port ${domain.port}, mais l'application écoute sur ${reachable.join(", ")}`,
-				description: `Traefik envoie les requêtes de ${domainLabel(domain)} vers le port ${domain.port} du service, où rien n'écoute.`,
+				title: `Domain ${domain.host} targets port ${domain.port}, but the application listens on ${reachable.join(", ")}`,
+				description: `Traefik sends requests for ${domainLabel(domain)} to port ${domain.port} of the service, where nothing is listening.`,
 				severity: "critical",
 				confidence: "high",
 				evidence: [
 					{
 						source: "dokploy_config",
-						summary: `Port du domaine ${domain.host} : ${domain.port}`,
+						summary: `Port of domain ${domain.host}: ${domain.port}`,
 					},
 					{
 						source: "listening_sockets",
-						summary: `Ports en écoute (hors localhost) : ${reachable.join(", ")}`,
+						summary: `Listening ports (excluding localhost): ${reachable.join(", ")}`,
 						excerpt: (ctx.listening ?? []).map((s) => `${s.address}:${s.port}`),
 					},
 					...(exposed.length
 						? [
 								{
 									source: "docker_image" as const,
-									summary: `EXPOSE dans l'image : ${exposed.join(", ")}`,
+									summary: `EXPOSE in the image: ${exposed.join(", ")}`,
 								},
 							]
 						: []),
 				],
 				probableCause:
-					"Le port configuré sur le domaine ne correspond pas au port d'écoute réel de l'application.",
+					"The port configured on the domain does not match the port the application actually listens on.",
 				recommendedFix: candidate
 					? {
-							summary: `Changer le port du domaine ${domain.host} de ${domain.port} à ${candidate}.`,
+							summary: `Change the port of domain ${domain.host} from ${domain.port} to ${candidate}.`,
 							action: {
 								kind: "update_domain_port",
 								domainId: domain.domainId,
@@ -73,7 +73,7 @@ export const portMismatchRule: Rule = (ctx) => {
 							},
 						}
 					: {
-							summary: `Choisir parmi les ports en écoute (${reachable.join(", ")}) celui qui sert HTTP et l'indiquer sur le domaine.`,
+							summary: `Pick the listening port (${reachable.join(", ")}) that serves HTTP and set it on the domain.`,
 						},
 				risk: "low",
 				autoFixable: candidate !== undefined,
@@ -89,26 +89,26 @@ export const portMismatchRule: Rule = (ctx) => {
 			const candidate = exposed.length === 1 ? exposed[0] : undefined;
 			findings.push({
 				code: "PORT_MISMATCH",
-				title: `Le domaine ${domain.host} cible le port ${domain.port}, l'image expose ${exposed.join(", ")}`,
+				title: `Domain ${domain.host} targets port ${domain.port}, the image exposes ${exposed.join(", ")}`,
 				description:
-					"Le port du domaine ne figure pas parmi les ports EXPOSE de l'image. Les ports réellement en écoute n'ont pas pu être vérifiés.",
+					"The domain port is not among the image's EXPOSE ports. The ports actually listening could not be checked.",
 				severity: "warning",
 				confidence: "medium",
 				evidence: [
 					{
 						source: "dokploy_config",
-						summary: `Port du domaine ${domain.host} : ${domain.port}`,
+						summary: `Port of domain ${domain.host}: ${domain.port}`,
 					},
 					{
 						source: "docker_image",
-						summary: `EXPOSE dans l'image : ${exposed.join(", ")}`,
+						summary: `EXPOSE in the image: ${exposed.join(", ")}`,
 					},
 				],
 				probableCause:
-					"EXPOSE est indicatif : l'application peut écouter ailleurs. À confirmer une fois le conteneur démarré.",
+					"EXPOSE is only a hint: the application may listen elsewhere. To be confirmed once the container is running.",
 				recommendedFix: candidate
 					? {
-							summary: `Vérifier le port d'écoute ; s'il s'agit bien de ${candidate}, l'indiquer sur le domaine.`,
+							summary: `Check the listening port; if it is indeed ${candidate}, set it on the domain.`,
 							action: {
 								kind: "update_domain_port",
 								domainId: domain.domainId,
@@ -116,7 +116,7 @@ export const portMismatchRule: Rule = (ctx) => {
 								port: candidate,
 							},
 						}
-					: { summary: "Vérifier le port d'écoute de l'application." },
+					: { summary: "Check the port the application listens on." },
 				risk: "low",
 				autoFixable: false,
 			});
@@ -133,26 +133,26 @@ export const portMismatchRule: Rule = (ctx) => {
 			}
 			findings.push({
 				code: "PORT_MISMATCH",
-				title: `Le port publié ${published.publishedPort} cible le port ${published.targetPort}, où rien n'écoute`,
+				title: `Published port ${published.publishedPort} targets port ${published.targetPort}, where nothing is listening`,
 				description:
-					"Un port publié sur l'hôte pointe vers un port du conteneur qui n'est pas en écoute.",
+					"A port published on the host points to a container port that is not listening.",
 				severity: "warning",
 				confidence: "high",
 				evidence: [
 					{
 						source: "dokploy_config",
-						summary: `Port publié ${published.publishedPort} → ${published.targetPort}/${published.protocol}`,
+						summary: `Published port ${published.publishedPort} → ${published.targetPort}/${published.protocol}`,
 					},
 					{
 						source: "listening_sockets",
-						summary: `Ports en écoute (hors localhost) : ${reachable.join(", ")}`,
+						summary: `Listening ports (excluding localhost): ${reachable.join(", ")}`,
 					},
 				],
 				probableCause:
-					"Le port cible (Target Port) de la publication ne correspond pas au port d'écoute.",
+					"The publication's Target Port does not match the listening port.",
 				recommendedFix: {
 					summary:
-						"Corriger le Target Port dans Advanced → Ports. Ne publier un port sur l'hôte que si un accès hors Traefik est nécessaire.",
+						"Fix the Target Port in Advanced → Ports. Only publish a port on the host if access outside Traefik is needed.",
 				},
 				risk: "medium",
 				autoFixable: false,
@@ -195,25 +195,25 @@ export const reverseProxyRule: Rule = (ctx) => {
 		findings.push({
 			code: "REVERSE_PROXY_UNREACHABLE",
 			title: routerMissing
-				? `Traefik ne route pas ${domain.host}`
-				: `Traefik ne parvient pas à joindre l'application pour ${domain.host}`,
+				? `Traefik does not route ${domain.host}`
+				: `Traefik cannot reach the application for ${domain.host}`,
 			description: routerMissing
-				? "Le service répond directement, mais Traefik renvoie 404 pour ce domaine : aucun routeur ne correspond."
-				: `Les requêtes vers ${domainLabel(domain)} échouent entre Traefik et le service ${ctx.target.appName}.`,
+				? "The service responds directly, but Traefik returns 404 for this domain: no router matches."
+				: `Requests to ${domainLabel(domain)} fail between Traefik and the service ${ctx.target.appName}.`,
 			severity: "critical",
 			confidence: "high",
 			evidence,
 			probableCause: routerMissing
-				? "La configuration dynamique Traefik du domaine est absente ou invalide (fichier non généré, règle Host incorrecte)."
-				: "Le service ne répond pas sur le port configuré (cause précisée par les autres constats s'il y en a).",
+				? "The domain's Traefik dynamic configuration is missing or invalid (file not generated, wrong Host rule)."
+				: "The service does not respond on the configured port (other findings, if any, give the cause).",
 			recommendedFix: routerMissing
 				? {
 						summary:
-							"Ouvrir le domaine dans Dokploy et l'enregistrer à nouveau pour régénérer la configuration Traefik, puis vérifier les logs de Traefik.",
+							"Open the domain in Dokploy and save it again to regenerate the Traefik configuration, then check the Traefik logs.",
 					}
 				: {
 						summary:
-							"Corriger la cause sous-jacente (port, démarrage, écoute) ; Traefik rétablit la route automatiquement.",
+							"Fix the underlying cause (port, startup, listening); Traefik restores the route automatically.",
 					},
 			risk: "none",
 			autoFixable: false,

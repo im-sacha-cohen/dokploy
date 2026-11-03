@@ -1,120 +1,120 @@
-# Serveur MCP natif — architecture
+# Native MCP server — architecture
 
-Dokploy expose un serveur MCP (Model Context Protocol) à l'adresse `https://<instance>/mcp`. Un client IA (Claude, agent d'IDE…) s'y connecte avec le compte Dokploy d'un utilisateur, après son consentement explicite. La sécurité est détaillée dans `MCP_SECURITY.md`.
+Dokploy exposes an MCP (Model Context Protocol) server at `https://<instance>/mcp`. An AI client (Claude, an IDE agent, etc.) connects to it with a user's Dokploy account, after the user gives explicit consent. Security is detailed in `MCP_SECURITY.md`.
 
-## Vue d'ensemble
+## Overview
 
 ```
-Client MCP ──(1) POST /mcp sans token──────────────► 401 + WWW-Authenticate: resource_metadata=…
+MCP client ──(1) POST /mcp without token──────────────► 401 + WWW-Authenticate: resource_metadata=…
            ──(2) GET /.well-known/oauth-protected-resource/mcp ─► { resource, authorization_servers }
-           ──(3) GET /.well-known/oauth-authorization-server/api/auth ─► endpoints OAuth (RFC 8414)
-           ──(4) POST /api/auth/oauth2/register (RFC 7591) ─► client public
-           ──(5) navigateur : /api/auth/oauth2/authorize (PKCE S256, resource=…/mcp)
-                     └─ pas de session → page de login Dokploy → reprise automatique
-                     └─ /oauth/consent : organisation + permissions cochées
+           ──(3) GET /.well-known/oauth-authorization-server/api/auth ─► OAuth endpoints (RFC 8414)
+           ──(4) POST /api/auth/oauth2/register (RFC 7591) ─► public client
+           ──(5) browser: /api/auth/oauth2/authorize (PKCE S256, resource=…/mcp)
+                     └─ no session → Dokploy login page → automatic resume
+                     └─ /oauth/consent: organization + checked permissions
            ──(6) POST /api/auth/oauth2/token (code + verifier) ─► JWT (aud=…/mcp, 15 min) + refresh token
-           ──(7) POST /mcp  Authorization: Bearer … ─► outils, ressources
+           ──(7) POST /mcp  Authorization: Bearer … ─► tools, resources
 ```
 
-## Composants
+## Components
 
-| Rôle | Emplacement | Réutilise |
+| Role | Location | Reuses |
 |---|---|---|
-| Serveur d'autorisation OAuth 2.1 | plugins `oauthProvider` (`@better-auth/oauth-provider` 1.6.23) et `jwt` dans `packages/server/src/lib/auth.ts` | **l'auth better-auth existante** : mêmes comptes, sessions, 2FA, passkeys et SSO. Pas de second système d'identité |
-| Tables OAuth | `db/schema/oauth.ts` : `oauth_client`, `oauth_access_token`, `oauth_refresh_token`, `oauth_consent`, `jwks` | migration `0200_mcp_oauth` |
-| État MCP de Dokploy | `mcp_settings` (par organisation), `mcp_grant` (organisation et scopes accordés à un client par un utilisateur), `mcp_audit_log` | — |
-| Vérification des tokens | `mcp/token.ts` | `verifyJwsAccessToken` de better-auth, JWKS lu en mémoire (aucun appel HTTP) |
-| Endpoint HTTP | `mcp/http.ts`, `pages/api/mcp.ts`, réécriture `/mcp` → `/api/mcp` | `createMcpHandler` du SDK `@modelcontextprotocol/server` 2.4.0 |
-| Outils et ressources | `mcp/tools.ts` (applications, déploiements, diagnostic) et `mcp/platform-tools.ts` (reste de l'API) ; helpers communs dans `mcp/tool-kit.ts` | services Dokploy (`findApplicationById`, `checkServiceAccess`…), moteurs `smart-deploy` (diagnostic, version, actions) |
-| Pont vers l'API Dokploy | `apps/dokploy/server/mcp/api-bridge.ts` (`callApi`) ; liste blanche des procédures dans `mcp/api-paths.ts` | **les procédures tRPC de l'UI**, appelées avec `appRouter.createCaller` et un contexte construit comme celui des clés d'API (`validateRequest`) : mêmes contrôles de permission, même journal d'audit Dokploy |
-| Commande dans un conteneur | `execInService` dans `api-bridge.ts` | contrôles du terminal de conteneur de l'UI (`canAccessDockerOverWss`, `containerBelongsToService`, `isValidContainerId`) |
-| Confirmation humaine | `mcp/confirm.ts` | elicitation MCP (`inputRequired.elicit`) et état HMAC du SDK (`createRequestStateCodec`) |
-| Déploiements | file de déploiement existante, via `server/utils/enqueue-application-job.ts` (partagé avec l'UI) | `myQueue` |
-| Consentement | `pages/oauth/consent.tsx` | composants UI Dokploy |
-| Réglages | Settings › AI Integrations (`pages/dashboard/settings/ai-integrations.tsx`), routeur tRPC `mcp` | — |
+| OAuth 2.1 authorization server | `oauthProvider` (`@better-auth/oauth-provider` 1.6.23) and `jwt` plugins in `packages/server/src/lib/auth.ts` | **the existing better-auth setup**: same accounts, sessions, 2FA, passkeys and SSO. No second identity system |
+| OAuth tables | `db/schema/oauth.ts`: `oauth_client`, `oauth_access_token`, `oauth_refresh_token`, `oauth_consent`, `jwks` | migration `0200_mcp_oauth` |
+| Dokploy MCP state | `mcp_settings` (per organization), `mcp_grant` (organization and scopes a user granted to a client), `mcp_audit_log` | — |
+| Token verification | `mcp/token.ts` | better-auth's `verifyJwsAccessToken`, JWKS read from memory (no HTTP call) |
+| HTTP endpoint | `mcp/http.ts`, `pages/api/mcp.ts`, rewrite `/mcp` → `/api/mcp` | `createMcpHandler` from the `@modelcontextprotocol/server` 2.4.0 SDK |
+| Tools and resources | `mcp/tools.ts` (applications, deployments, diagnostics) and `mcp/platform-tools.ts` (rest of the API); shared helpers in `mcp/tool-kit.ts` | Dokploy services (`findApplicationById`, `checkServiceAccess`…), `smart-deploy` engines (diagnostics, version, actions) |
+| Bridge to the Dokploy API | `apps/dokploy/server/mcp/api-bridge.ts` (`callApi`); procedure allowlist in `mcp/api-paths.ts` | **the UI's tRPC procedures**, called with `appRouter.createCaller` and a context built like the one for API keys (`validateRequest`): same permission checks, same Dokploy audit log |
+| Command in a container | `execInService` in `api-bridge.ts` | the UI container terminal's checks (`canAccessDockerOverWss`, `containerBelongsToService`, `isValidContainerId`) |
+| Human confirmation | `mcp/confirm.ts` | MCP elicitation (`inputRequired.elicit`) and the SDK's HMAC state (`createRequestStateCodec`) |
+| Deployments | existing deployment queue, via `server/utils/enqueue-application-job.ts` (shared with the UI) | `myQueue` |
+| Consent | `pages/oauth/consent.tsx` | Dokploy UI components |
+| Settings | Settings › AI Integrations (`pages/dashboard/settings/ai-integrations.tsx`), `mcp` tRPC router | — |
 
-La logique métier est **partagée entre l'UI et MCP** : un outil MCP appelle les mêmes fonctions que les routes tRPC (diagnostic, statut de version, restart, redeploy, file de déploiement, mise à jour de domaine).
+The business logic is **shared between the UI and MCP**: an MCP tool calls the same functions as the tRPC routes (diagnostics, version status, restart, redeploy, deployment queue, domain update).
 
-## Transport et protocole
+## Transport and protocol
 
-- **Streamable HTTP**, sans état. Chaque requête crée une instance `McpServer` avec les outils de l'utilisateur authentifié ; aucune session côté serveur.
-- **Protocole 2026-07-28** : enveloppe `_meta` `io.modelcontextprotocol/*` et en-têtes `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`.
-- **Clients 2025-xx** (`initialize`, 2025-06-18, 2025-11-25) : servis par le repli sans état du SDK (`legacy: "stateless"`). GET et DELETE (sessions 2025) répondent 405.
-- Corps limité à 1 Mio, réponse JSON ou SSE selon le besoin.
+- **Streamable HTTP**, stateless. Each request creates an `McpServer` instance with the authenticated user's tools; there is no server-side session.
+- **Protocol 2026-07-28**: `io.modelcontextprotocol/*` `_meta` envelope and the `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers.
+- **2025-xx clients** (`initialize`, 2025-06-18, 2025-11-25): served by the SDK's stateless fallback (`legacy: "stateless"`). GET and DELETE (2025 sessions) return 405.
+- Body limited to 1 MiB; the response is JSON or SSE as needed.
 
-## Outils
+## Tools
 
-| Scope | Outils |
+| Scope | Tools |
 |---|---|
-| `mcp:read` | `dokploy_list_projects`, `dokploy_list_applications`, `dokploy_get_application`, `dokploy_get_deployments` (application ou compose), `dokploy_get_deployment_status` et `dokploy_get_deployment_logs` (logs de build, application ou compose), `dokploy_get_deployment_timeline` (Smart Deploy), `dokploy_preflight` (Smart Deploy, ne change rien), `dokploy_get_runtime_version`, `dokploy_get_application_health`, `dokploy_get_port_configuration`, `dokploy_diagnose_deployment`, `dokploy_list_servers` |
+| `mcp:read` | `dokploy_list_projects`, `dokploy_list_applications`, `dokploy_get_application`, `dokploy_get_deployments` (application or compose), `dokploy_get_deployment_status` and `dokploy_get_deployment_logs` (build logs, application or compose), `dokploy_get_deployment_timeline` (Smart Deploy), `dokploy_preflight` (Smart Deploy, changes nothing), `dokploy_get_runtime_version`, `dokploy_get_application_health`, `dokploy_get_port_configuration`, `dokploy_diagnose_deployment`, `dokploy_diagnose_service` (Smart Deploy for any service: application, compose, database), `dokploy_list_servers` |
 | `mcp:deploy` | `dokploy_deploy_application`, `dokploy_deploy_latest`, `dokploy_rebuild_application`, `dokploy_restart_application`, `dokploy_rollback_deployment` |
-| `mcp:read` (suite) | `dokploy_list_services` (tous types de services), `dokploy_get_service`, `dokploy_get_service_logs` (logs d'exécution), `dokploy_list_backup_files`, `dokploy_suggest_subdomain` (fournisseurs DNS, zones, sous-domaine libre ; ne crée rien) |
-| `mcp:deploy` (suite) | `dokploy_deploy_service` (application, compose, base de données), `dokploy_start_service`, `dokploy_cancel_deployment`, `dokploy_apply_fix` (applique un correctif proposé par le diagnostic ; `update_domain_port` exige aussi `mcp:config`) |
-| `mcp:config` | `dokploy_update_application_port`, `dokploy_update_domain`, `dokploy_update_healthcheck`, `dokploy_update_service_settings`, `dokploy_set_application_source` (Git, image Docker, GitHub), `dokploy_set_build_type`, `dokploy_update_compose_file`, `dokploy_create_domain`, `dokploy_delete_domain` ✋ |
-| `mcp:env` | `dokploy_get_env_vars` (secrets masqués), `dokploy_set_env_vars` (ajout/suppression sans toucher aux autres) |
+| `mcp:read` (continued) | `dokploy_list_services` (all service types), `dokploy_get_service`, `dokploy_get_service_logs` (runtime logs), `dokploy_list_backup_files`, `dokploy_suggest_subdomain` (DNS providers, zones, free subdomain; creates nothing) |
+| `mcp:deploy` (continued) | `dokploy_deploy_service` (application, compose, database), `dokploy_start_service`, `dokploy_cancel_deployment`, `dokploy_apply_fix` (applies a fix proposed by the diagnostics, for any service type: `deploy_latest`, `redeploy_deployment`, `redeploy_service`, `update_domain_port`, which also requires `mcp:config`) |
+| `mcp:config` | `dokploy_update_application_port`, `dokploy_update_domain`, `dokploy_update_healthcheck`, `dokploy_update_service_settings`, `dokploy_set_application_source` (Git, Docker image, GitHub), `dokploy_set_build_type`, `dokploy_update_compose_file`, `dokploy_create_domain`, `dokploy_delete_domain` ✋ |
+| `mcp:env` | `dokploy_get_env_vars` (secrets masked), `dokploy_set_env_vars` (add/remove without touching the others) |
 | `mcp:manage` | `dokploy_create_project`, `dokploy_create_environment`, `dokploy_create_service`, `dokploy_stop_service` ✋, `dokploy_delete_service` ✋, `dokploy_delete_environment` ✋, `dokploy_delete_project` ✋, `dokploy_run_backup`, `dokploy_restore_backup` ✋ |
 | `mcp:exec` | `dokploy_exec_command` ✋ |
 
-✋ : l'outil demande une **confirmation humaine** au client (elicitation) avant d'agir, à chaque appel.
+✋: the tool asks the client for **human confirmation** (elicitation) before acting, on every call.
 
-`mcp:env`, `mcp:manage` et `mcp:exec` sont **désactivés par défaut** dans chaque organisation : un owner ou un admin doit les autoriser dans Settings › AI Integrations.
+`mcp:env`, `mcp:manage` and `mcp:exec` are **disabled by default** in each organization: an owner or admin must allow them in Settings › AI Integrations.
 
-Types de services : `application`, `compose`, `postgres`, `mysql`, `mariadb`, `mongo`, `redis`. Les outils génériques prennent `serviceType` + `serviceId`.
+Service types: `application`, `compose`, `postgres`, `mysql`, `mariadb`, `mongo`, `redis`. The generic tools take `serviceType` + `serviceId`.
 
-**Ressources** : `dokploy://application/{applicationId}` et `dokploy://deployment/{deploymentId}/timeline`.
+**Resources**: `dokploy://application/{applicationId}` and `dokploy://deployment/{deploymentId}/timeline`.
 
-**Exclusions** :
-- aucun accès au socket Docker ni au shell de l'hôte ; `dokploy_exec_command` ne s'exécute que dans un conteneur du service visé ;
-- aucune valeur secrète renvoyée : mots de passe de base, clés SSH, identifiants de registre et variables dont le nom évoque un secret sont masqués ;
-- aucune modification de serveur, d'utilisateur, de rôle, de destination de backup, de fournisseur Git ou de réglage de l'instance ;
-- restauration d'un backup de compose et backups du serveur web Dokploy : seulement depuis l'UI.
+**Exclusions**:
+- no access to the Docker socket or the host shell; `dokploy_exec_command` only runs inside a container of the targeted service;
+- no secret value is returned: database passwords, SSH keys, registry credentials and variables whose name suggests a secret are masked;
+- no changes to servers, users, roles, backup destinations, Git providers or instance settings;
+- restoring a compose backup and backing up the Dokploy web server: from the UI only.
 
-**Précisions sur certains outils** :
-- `deploy_application` et `deploy_latest` font tous deux un fetch + build de la branche ; `deploy_latest` vérifie et renvoie d'abord la tête distante.
-- `rebuild_application` reconstruit le dernier clone, sans fetch.
-- `rollback_deployment` relance une image conservée (voir `SMART_DEPLOY_ENGINE.md`).
-- `update_healthcheck` ne prend effet qu'au prochain déploiement.
-- `set_env_vars`, `update_service_settings`, `set_application_source`, `set_build_type` et `update_compose_file` prennent effet au prochain déploiement (la réponse le rappelle).
-- `create_domain` accepte `dns` (fournisseur et zone de Settings › DNS, nom facultatif) : il crée aussi l'enregistrement A, sans jamais en écraser un, puis le domaine. `delete_domain` supprime aussi l'enregistrement créé par Dokploy (sauf `deleteDnsRecord: false`), et la confirmation le mentionne.
-- `create_service` génère les mots de passe des bases de données côté serveur ; ils restent visibles dans l'UI, jamais dans MCP.
-- `exec_command` lance `sh -c <commande>` via `docker exec`, avec un délai de 1 à 120 s, une sortie tronquée à 32 000 caractères et nettoyée par le redactor.
+**Notes on specific tools**:
+- `deploy_application` and `deploy_latest` both fetch and build the branch; `deploy_latest` first checks and returns the remote head.
+- `rebuild_application` rebuilds the last clone, without fetching.
+- `rollback_deployment` relaunches a retained image (see `SMART_DEPLOY_ENGINE.md`).
+- `update_healthcheck` only takes effect at the next deployment.
+- `set_env_vars`, `update_service_settings`, `set_application_source`, `set_build_type` and `update_compose_file` take effect at the next deployment (the response says so).
+- `create_domain` accepts `dns` (provider and zone from Settings › DNS, optional name): it also creates the A record, never overwriting an existing one, and then the domain. `delete_domain` also deletes the record Dokploy created (unless `deleteDnsRecord: false`), and the confirmation says so.
+- `create_service` generates database passwords server-side; they stay visible in the UI, never in MCP.
+- `exec_command` runs `sh -c <command>` via `docker exec`, with a timeout of 1 to 120 s and output truncated to 32,000 characters and passed through the redactor.
 
-### Confirmation humaine (elicitation)
+### Human confirmation (elicitation)
 
-1. Premier appel : le serveur renvoie `resultType: "input_required"` avec une demande `elicitation/create` (le message nomme l'objet, par exemple la commande exacte ou le nom du service) et un `requestState`.
-2. Le client affiche la question à l'utilisateur, puis rappelle l'outil avec les **mêmes arguments**, la réponse (`inputResponses.confirm`) et le `requestState`.
-3. L'action n'est exécutée que si la réponse est `accept` avec `confirm: true` et si l'état correspond à cet appel (voir `MCP_SECURITY.md`).
+1. First call: the server returns `resultType: "input_required"` with an `elicitation/create` request (the message names the target, for example the exact command or the service name) and a `requestState`.
+2. The client shows the question to the user, then calls the tool again with the **same arguments**, the answer (`inputResponses.confirm`) and the `requestState`.
+3. The action runs only if the answer is `accept` with `confirm: true` and the state matches this call (see `MCP_SECURITY.md`).
 
-Un client qui ne déclare pas la capacité `elicitation` (protocole 2026-07-28) reçoit un refus explicite, sans exécution. C'est aussi le cas des clients 2025-xx servis sans état.
+A client that does not declare the `elicitation` capability (protocol 2026-07-28) gets an explicit refusal, with nothing executed. The same applies to 2025-xx clients served statelessly.
 
-Tous les outils sont listés quel que soit le token. Appeler un outil hors scope renvoie **403 `insufficient_scope`** avec `WWW-Authenticate`, ce qui permet au client de demander un consentement plus large (*step-up*).
+All tools are listed regardless of the token. Calling a tool outside the token's scope returns **403 `insufficient_scope`** with `WWW-Authenticate`, which lets the client ask for broader consent (*step-up*).
 
 ## Configuration
 
-| Variable | Rôle |
+| Variable | Role |
 |---|---|
-| `DOKPLOY_MCP_RESOURCE_URL` | URL publique de `/mcp` (par exemple `https://dokploy.example.com/mcp`), plusieurs séparées par des virgules. **Obligatoire en production.** Elle sert d'audience des tokens et de liste blanche des Host. Sans elle, `/mcp` répond 503. En développement, elle vaut par défaut `http://localhost:3000/mcp` |
+| `DOKPLOY_MCP_RESOURCE_URL` | Public URL of `/mcp` (for example `https://dokploy.example.com/mcp`); several can be given, comma-separated. **Required in production.** It serves as the token audience and as the Host allowlist. Without it, `/mcp` returns 503. In development it defaults to `http://localhost:3000/mcp` |
 
-Côté organisation, l'intégration est **désactivée par défaut**. Un owner ou un admin l'active dans Settings › AI Integrations et choisit les scopes autorisés.
+At the organization level, the integration is **disabled by default**. An owner or admin enables it in Settings › AI Integrations and chooses the allowed scopes.
 
-**Connexion d'un client** : `claude mcp add --transport http dokploy https://<instance>/mcp`, ou l'ajout d'un serveur MCP distant dans un autre client. La découverte OAuth est automatique.
+**Connecting a client**: `claude mcp add --transport http dokploy https://<instance>/mcp`, or add a remote MCP server in another client. OAuth discovery is automatic.
 
-## Compatibilité upstream
+## Upstream compatibility
 
-Changements dans du code existant :
-- 2 plugins ajoutés à better-auth, plus `"/token"` dans `disabledPaths`, et 2 méthodes exposées (`getJwks`, `getOAuthServerConfig`) ;
-- page de login : après connexion, elle suit la redirection OAuth si une autorisation est en cours (`continueAfterLogin`), sinon comportement inchangé ;
-- `oauthProviderClient()` ajouté au client d'auth : il n'agit que sur les pages portant une requête OAuth signée (`sig`) ;
-- `next.config.mjs` : réécritures `/mcp` et `/.well-known/*` ;
-- une entrée de menu Settings, un routeur tRPC `mcp`, une migration ;
-- l'extension « tout faire » n'ajoute que des fichiers : aucune procédure tRPC existante n'est modifiée, elles sont appelées telles quelles ;
-- 2 dépendances : `@better-auth/oauth-provider` (même version que better-auth) et `@modelcontextprotocol/server` (déjà présent dans le lockfile en dépendance transitive).
+Changes to existing code:
+- 2 plugins added to better-auth, plus `"/token"` in `disabledPaths`, and 2 exposed methods (`getJwks`, `getOAuthServerConfig`);
+- login page: after sign-in, it follows the OAuth redirect if an authorization is in progress (`continueAfterLogin`), otherwise behavior is unchanged;
+- `oauthProviderClient()` added to the auth client: it only acts on pages carrying a signed OAuth request (`sig`);
+- `next.config.mjs`: `/mcp` and `/.well-known/*` rewrites;
+- one Settings menu entry, one `mcp` tRPC router, one migration;
+- the "do everything" extension only adds files: no existing tRPC procedure is modified, they are called as-is;
+- 2 dependencies: `@better-auth/oauth-provider` (same version as better-auth) and `@modelcontextprotocol/server` (already in the lockfile as a transitive dependency).
 
-## Limites
+## Limitations
 
-- **Client ID Metadata Documents** (recommandés par la spec 2026-07-28) : non pris en charge. better-auth le fait via `@better-auth/cimd`, non installé pour l'instant. L'enregistrement dynamique (RFC 7591), encore optionnel dans la spec, est utilisé.
-- **Notifications** `subscriptions/listen` : non exploitées (aucun événement publié).
-- **Un grant par couple utilisateur/client**, lié à une seule organisation. Ré-autoriser le client permet d'en changer.
-- **Instance unique** : la limitation de débit est en mémoire.
-- **Dokploy Cloud** : les outils de déploiement sont refusés (même limite que `redeployVersion`).
-- **Pas de tunnel public** : un client distant comme claude.ai ne peut pas joindre l'instance locale. Seuls des clients locaux ont été testés (voir `TESTING.md`).
+- **Client ID Metadata Documents** (recommended by the 2026-07-28 spec): not supported. better-auth handles them via `@better-auth/cimd`, which is not installed for now. Dynamic registration (RFC 7591), still optional in the spec, is used.
+- **`subscriptions/listen` notifications**: not used (no events are published).
+- **One grant per user/client pair**, tied to a single organization. Re-authorizing the client lets you change it.
+- **Single instance**: rate limiting is in memory.
+- **Dokploy Cloud**: deployment tools are refused (same limitation as `redeployVersion`).
+- **No public tunnel**: a remote client such as claude.ai cannot reach the local instance. Only local clients have been tested (see `TESTING.md`).

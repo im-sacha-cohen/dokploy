@@ -253,10 +253,10 @@ export const runPreflight = async (
 				code: "SOURCE_UNAVAILABLE",
 				severity: "warning",
 				confidence: "high",
-				title: "Code source non analysé",
+				title: "Source code not analyzed",
 				detail: reason,
 				recommendation:
-					"Vérifier la source (dépôt, branche, accès) dans l'onglet General.",
+					"Check the source (repository, branch, access) in the General tab.",
 			},
 			...empty.checks.filter((c) => c.code === "NO_DOMAIN"),
 		],
@@ -267,7 +267,7 @@ export const runPreflight = async (
 	let script: string;
 	if (app.sourceType === "docker") {
 		return unavailable(
-			"La source est une image Docker : il n'y a pas de code à analyser.",
+			"The source is a Docker image: there is no code to analyze.",
 		);
 	}
 	if (app.sourceType === "drop") {
@@ -289,7 +289,7 @@ export const runPreflight = async (
 		);
 		const clone = await cloneCommand(app, serverId, tmp);
 		if (!clone)
-			return unavailable(`Source « ${app.sourceType} » non prise en charge.`);
+			return unavailable(`Source "${app.sourceType}" is not supported.`);
 		script = [
 			`trap ${quote([`rm -rf ${tmp}`])} EXIT`,
 			`(${clone}) >/dev/null 2>&1`,
@@ -301,7 +301,7 @@ export const runPreflight = async (
 	const snapshot = parseSnapshotOutput(result.stdout);
 	if (!snapshot) {
 		return unavailable(
-			"Le dépôt n'a pas pu être cloné ou lu (accès, branche inexistante ou chemin de build invalide).",
+			"The repository could not be cloned or read (access, missing branch or invalid build path).",
 		);
 	}
 

@@ -1,120 +1,120 @@
-# Développement local (macOS / Linux)
+# Local development (macOS / Linux)
 
-L'environnement local tourne dans un **devbox Docker-in-Docker** : un seul conteneur privilégié (`dokploy-devbox`) qui embarque **son propre démon Docker**. Swarm, `dokploy-network`, Traefik, Postgres et toutes les applications déployées vivent dans ce démon interne.
+The local environment runs in a **Docker-in-Docker devbox**: a single privileged container (`dokploy-devbox`) that embeds **its own Docker daemon**. Swarm, `dokploy-network`, Traefik, Postgres and all the deployed applications live inside that internal daemon.
 
-- Le démon Docker de l'hôte (Docker Desktop) **n'est pas passé en mode Swarm**, et les autres conteneurs de la machine ne sont pas touchés.
-- Tous les ports sont liés à `127.0.0.1`. Rien n'est exposé sur le réseau.
-- Le dossier `.devcontainer/` d'upstream utilise la même approche (docker-in-docker).
+- The host's Docker daemon (Docker Desktop) is **not switched to Swarm mode**, and the machine's other containers are left alone.
+- All ports are bound to `127.0.0.1`. Nothing is exposed on the network.
+- Upstream's `.devcontainer/` folder uses the same approach (docker-in-docker).
 
-## Prérequis
+## Prerequisites
 
-| Outil | Version testée | Remarque |
+| Tool | Tested version | Note |
 |---|---|---|
-| macOS | 26.2, Apple Silicon | Intel non testé |
-| Docker Desktop | 27.4 (Compose v2.31) | 8 Go de RAM alloués suffisent |
-| Espace disque | ~10 Go | image devbox + images de build + `node_modules` |
+| macOS | 26.2, Apple Silicon | Intel not tested |
+| Docker Desktop | 27.4 (Compose v2.31) | 8 GB of RAM allocated is enough |
+| Disk space | ~10 GB | devbox image + build images + `node_modules` |
 
-Node.js, pnpm, nixpacks, railpack et pack sont **dans le devbox**. Rien n'est à installer sur l'hôte.
+Node.js, pnpm, nixpacks, railpack and pack are **inside the devbox**. Nothing needs to be installed on the host.
 
-## Commandes
+## Commands
 
 ```bash
-./scripts/dev-start.sh     # build + démarrage, attend que l'UI réponde
-./scripts/dev-stop.sh      # arrêt, données conservées
-./scripts/dev-test.sh      # tests Vitest dans le devbox (args passés à vitest)
-./scripts/dev-reset.sh     # SUPPRIME le devbox et ses volumes (confirmation demandée)
+./scripts/dev-start.sh     # build + start, waits for the UI to respond
+./scripts/dev-stop.sh      # stop, data kept
+./scripts/dev-test.sh      # Vitest tests in the devbox (args passed to vitest)
+./scripts/dev-reset.sh     # DELETES the devbox and its volumes (asks for confirmation)
 ```
 
-Équivalent sans script : `docker compose -f docker-compose.dev.yml up -d --build`.
+Equivalent without the scripts: `docker compose -f docker-compose.dev.yml up -d --build`.
 
-Le premier démarrage installe les dépendances (`pnpm install --frozen-lockfile`, compilation des modules natifs) et dure environ 5 à 10 minutes. Les démarrages suivants ne réinstallent que si `pnpm-lock.yaml` a changé.
+The first start installs dependencies (`pnpm install --frozen-lockfile`, native module compilation) and takes about 5 to 10 minutes. Later starts only reinstall if `pnpm-lock.yaml` has changed.
 
-### Ce que fait le démarrage (`dev/devbox/entrypoint.sh`)
+### What startup does (`dev/devbox/entrypoint.sh`)
 
-1. Démarre `dockerd` dans le conteneur, avec ses données dans le volume `dokploy-dev_docker-data`.
-2. Démarre le serveur Git de démo (`dev/git-server.mjs`, port 4040 interne) si les dépôts de démo existent.
-3. Crée `apps/dokploy/.env` depuis `.env.example` s'il est absent.
-4. Exécute `pnpm install`, puis `pnpm server:script`, puis `pnpm dokploy:setup` (swarm init, réseau, Traefik, Postgres, migrations ; idempotent).
-5. Lance `pnpm dokploy:dev` (hot reload : le code est monté depuis l'hôte).
+1. Starts `dockerd` in the container, with its data in the `dokploy-dev_docker-data` volume.
+2. Starts the demo Git server (`dev/git-server.mjs`, internal port 4040) if the demo repositories exist.
+3. Creates `apps/dokploy/.env` from `.env.example` if it is missing.
+4. Runs `pnpm install`, then `pnpm server:script`, then `pnpm dokploy:setup` (swarm init, network, Traefik, Postgres, migrations; idempotent).
+5. Starts `pnpm dokploy:dev` (hot reload: the code is mounted from the host).
 
-> `pnpm server:script` modifie `packages/server/package.json` (exports vers `src/`), comme dans le workflow upstream. **Ne pas committer ce changement.**
+> `pnpm server:script` modifies `packages/server/package.json` (exports pointing to `src/`), as in the upstream workflow. **Do not commit this change.**
 
-## Accès
+## Access
 
 | Service | URL |
 |---|---|
-| Interface Dokploy | http://localhost:3000 |
+| Dokploy interface | http://localhost:3000 |
 | Applications (via Traefik) | `http://<host>.docker.localhost:8880` |
 | Traefik HTTPS | `https://…:8443` |
-| Shell dans le devbox | `docker exec -it dokploy-devbox bash` |
-| Docker interne | `docker exec dokploy-devbox docker ps` |
-| Logs du serveur dev | `docker compose -f docker-compose.dev.yml logs -f devbox` |
+| Shell in the devbox | `docker exec -it dokploy-devbox bash` |
+| Internal Docker | `docker exec dokploy-devbox docker ps` |
+| Dev server logs | `docker compose -f docker-compose.dev.yml logs -f devbox` |
 
-Les ports sont configurables dans `dev/.env` (voir `dev/.env.example`). Les valeurs par défaut évitent 80, 5432 et 8080, souvent déjà utilisés sur macOS.
+Ports are configurable in `dev/.env` (see `dev/.env.example`). The defaults avoid 80, 5432 and 8080, which are often already in use on macOS.
 
-`*.docker.localhost` est résolu vers `127.0.0.1` par les navigateurs et par curl. Pour tester sans DNS : `curl -H "Host: a-healthy.docker.localhost" http://127.0.0.1:8880/`.
+`*.docker.localhost` resolves to `127.0.0.1` in browsers and in curl. To test without DNS: `curl -H "Host: a-healthy.docker.localhost" http://127.0.0.1:8880/`.
 
-## Compte de test et applications de démonstration
+## Test account and demo applications
 
-`dev/.env` (gitignoré, `chmod 600`) contient l'URL locale et un compte propriétaire **de test uniquement**, avec un mot de passe aléatoire généré localement.
+`dev/.env` (gitignored, `chmod 600`) contains the local URL and an owner account **for testing only**, with a random password generated locally.
 
 ```bash
-docker exec dokploy-devbox /workspace/dev/demo-apps/init-repos.sh   # dépôts Git de démo
-node dev/demo-apps/seed.mjs --deploy                               # projet + apps + domaines + déploiement
+docker exec dokploy-devbox /workspace/dev/demo-apps/init-repos.sh   # demo Git repositories
+node dev/demo-apps/seed.mjs --deploy                               # project + apps + domains + deployment
 ```
 
-`seed.mjs` refuse toute URL qui n'est pas `localhost` ou `127.0.0.1`. Il passe par l'API REST de Dokploy, donc par les mêmes chemins de code que l'interface.
+`seed.mjs` refuses any URL that isn't `localhost` or `127.0.0.1`. It goes through Dokploy's REST API, so through the same code paths as the interface.
 
-| App | Scénario | Résultat constaté avec Dokploy upstream (02/11/2026) |
+| App | Scenario | Result observed with upstream Dokploy (2026-11-02) |
 |---|---|---|
-| A `a-healthy` | Déploiement normal, healthcheck Docker | `done`, service 1/1, HTTP 200 |
-| B `b-wrong-port` | Écoute sur 3000, domaine routé vers 80 | **`done`**, service 1/1 sain, **HTTP 502** |
-| C `c-crash-loop` | `exit 1` au démarrage | **`done`**, service 0/1, redémarrages en boucle, **502** |
-| D `d-missing-env` | `DATABASE_URL` et `SESSION_SECRET` absentes (exit 78) | **`done`**, 0/1, **502** |
-| E `e-outdated` | v1 déployée, puis `e-outdated-push-v2.sh` pousse une v2 | `done`, 200 (scénario de version à jouer) |
-| F `f-compose` | web + redis avec healthchecks et `depends_on` | `done`, 2 conteneurs sains, 200 |
-| G `g-localhost-bind` | Écoute sur `127.0.0.1:3000` uniquement | **`done`**, 1/1, **502** |
+| A `a-healthy` | Normal deployment, Docker healthcheck | `done`, service 1/1, HTTP 200 |
+| B `b-wrong-port` | Listens on 3000, domain routed to 80 | **`done`**, service 1/1 healthy, **HTTP 502** |
+| C `c-crash-loop` | `exit 1` at startup | **`done`**, service 0/1, restart loop, **502** |
+| D `d-missing-env` | `DATABASE_URL` and `SESSION_SECRET` missing (exit 78) | **`done`**, 0/1, **502** |
+| E `e-outdated` | v1 deployed, then `e-outdated-push-v2.sh` pushes a v2 | `done`, 200 (version scenario to be played) |
+| F `f-compose` | web + redis with healthchecks and `depends_on` | `done`, 2 healthy containers, 200 |
+| G `g-localhost-bind` | Listens on `127.0.0.1:3000` only | **`done`**, 1/1, **502** |
 
-Ce tableau est la référence avant modification : **les 7 déploiements sont marqués `done` alors que 4 applications sont inaccessibles.**
+This table is the baseline before any change: **all 7 deployments are marked `done` while 4 applications are unreachable.**
 
-Diagnostic des applications : `node dev/demo-apps/diagnose.mjs [filtre] [--json]` appelle `smartDeploy.diagnoseApplication` sur chaque app du projet de démo (voir `docs/DEPLOYMENT_DIAGNOSTICS.md`).
+Application diagnostics: `node dev/demo-apps/diagnose.mjs [filter] [--json]` calls `smartDeploy.diagnoseApplication` on every app of the demo project (see `docs/DEPLOYMENT_DIAGNOSTICS.md`).
 
-Suivi de version : `node dev/demo-apps/version-scenario.mjs` joue le scénario E complet (deploy latest, push, rollback, restart, rebuild) et vérifie 22 points (voir `docs/SMART_DEPLOY_ENGINE.md`).
+Version tracking: `node dev/demo-apps/version-scenario.mjs` plays the full scenario E (deploy latest, push, rollback, restart, rebuild) and checks 22 points (see `docs/SMART_DEPLOY_ENGINE.md`).
 
-Pour le scénario E : `docker exec dokploy-devbox /workspace/dev/demo-apps/e-outdated-push-v2.sh` fait avancer la branche distante sans redéployer.
+For scenario E: `docker exec dokploy-devbox /workspace/dev/demo-apps/e-outdated-push-v2.sh` advances the remote branch without redeploying.
 
-## Serveur MCP en local
+## MCP server locally
 
-- **URL** : `http://localhost:3000/mcp`, valeur par défaut en développement de `DOKPLOY_MCP_RESOURCE_URL`.
-- **Activation** : Settings › AI Integrations, avec le compte de test.
-- **Test bout-en-bout** : `node dev/mcp/oauth-mcp-e2e.mjs` joue la découverte, l'enregistrement, PKCE, le consentement, les appels d'outils, les cas d'erreur et la révocation.
-- **Client local** : `claude mcp add --transport http dokploy http://localhost:3000/mcp`.
-- **Client distant** (claude.ai par exemple) : il lui faut une URL HTTPS publique, donc un tunnel. Il n'est **pas** mis en place sans ton accord.
+- **URL**: `http://localhost:3000/mcp`, the development default for `DOKPLOY_MCP_RESOURCE_URL`.
+- **Activation**: Settings › AI Integrations, with the test account.
+- **End-to-end test**: `node dev/mcp/oauth-mcp-e2e.mjs` plays discovery, registration, PKCE, consent, tool calls, error cases and revocation.
+- **Local client**: `claude mcp add --transport http dokploy http://localhost:3000/mcp`.
+- **Remote client** (claude.ai for example): it needs a public HTTPS URL, so a tunnel. It is **not** set up without your approval.
 
-## Incompatibilités macOS et contournements
+## macOS incompatibilities and workarounds
 
-| Contrainte Dokploy | Situation sur macOS | Solution |
+| Dokploy constraint | Situation on macOS | Solution |
 |---|---|---|
-| Docker Swarm + overlay | Possible sur Docker Desktop, mais modifierait le démon partagé | Swarm dans le démon interne du devbox |
-| Traefik en ports `host` 80/443 | 80 souvent occupé | Ports publiés sur 8880/8443 de l'hôte |
-| Postgres publié sur 5432 en dev | 5432 souvent occupé | Publié uniquement dans le devbox |
-| `node_modules` natifs (bcrypt, node-pty, ssh2…) | Binaires darwin et linux incompatibles | `node_modules` dans des volumes Linux |
-| `.docker/` (BASE_PATH dev : clones, logs, Traefik) | Lent et sensible à la casse sur un bind mount | Volume `dokploy-dev_dokploy-data` |
-| Sources Git personnalisées : HTTP(S) obligatoire sans clé SSH, `--depth 1` | Le protocole HTTP « dumb » ne gère pas le shallow clone | Petit serveur Git *smart HTTP* (`dev/git-server.mjs`) |
+| Docker Swarm + overlay | Possible on Docker Desktop, but would modify the shared daemon | Swarm in the devbox's internal daemon |
+| Traefik on `host` ports 80/443 | 80 often in use | Ports published on host 8880/8443 |
+| Postgres published on 5432 in dev | 5432 often in use | Published only inside the devbox |
+| Native `node_modules` (bcrypt, node-pty, ssh2…) | darwin and linux binaries are incompatible | `node_modules` in Linux volumes |
+| `.docker/` (dev BASE_PATH: clones, logs, Traefik) | Slow and case-sensitive on a bind mount | `dokploy-dev_dokploy-data` volume |
+| Custom Git sources: HTTP(S) required without an SSH key, `--depth 1` | The "dumb" HTTP protocol doesn't handle shallow clones | Small *smart HTTP* Git server (`dev/git-server.mjs`) |
 
-## Non couvert par cet environnement
+## Not covered by this environment
 
-- Serveurs distants (SSH multi-nœuds), certificats Let's Encrypt réels, HTTP/3.
-- Domaines publics : pas de tunnel. Un tunnel HTTPS (par exemple pour connecter claude.ai à `/mcp`) ne sera mis en place qu'avec accord explicite.
-- Edition Cloud (`apps/api`, Inngest) et `apps/schedules` (Redis/BullMQ) : non démarrés.
+- Remote servers (multi-node SSH), real Let's Encrypt certificates, HTTP/3.
+- Public domains: no tunnel. An HTTPS tunnel (for example to connect claude.ai to `/mcp`) will only be set up with explicit approval.
+- Cloud edition (`apps/api`, Inngest) and `apps/schedules` (Redis/BullMQ): not started.
 
-## Dépannage
+## Troubleshooting
 
-- **L'instance ne démarre plus après un redémarrage, avec `could not add service state for endpoint dokploy-traefik-previous`** : le setup d'upstream renomme le conteneur Traefik, et le Docker interne garde un endpoint réseau périmé. Supprimer le conteneur pour que le setup le recrée : `docker exec dokploy-devbox docker rm -f dokploy-traefik`, puis `docker restart dokploy-devbox`.
-- **`tsc` de l'app tué (`Killed`)** : le typecheck complet et le serveur de dev ne tiennent pas ensemble dans la mémoire du devbox. Lancer `tsc` juste après un redémarrage du devbox.
-- **Code modifié dans `packages/server` non pris en compte** : le serveur de dev (`tsx server/server.ts`) ne recharge pas à chaud la file de déploiement. Lancer `docker restart dokploy-devbox`.
-- **Après modification de `dev/devbox/Dockerfile`** : `./scripts/dev-start.sh` reconstruit l'image. L'entrypoint est lu depuis le dépôt monté ; une image antérieure au 02/11/2026 en embarquait une copie figée et doit être reconstruite.
+- **The instance no longer starts after a restart, with `could not add service state for endpoint dokploy-traefik-previous`**: upstream's setup renames the Traefik container, and the internal Docker keeps a stale network endpoint. Delete the container so the setup recreates it: `docker exec dokploy-devbox docker rm -f dokploy-traefik`, then `docker restart dokploy-devbox`.
+- **App `tsc` killed (`Killed`)**: the full typecheck and the dev server don't fit together in the devbox's memory. Run `tsc` right after restarting the devbox.
+- **Changes in `packages/server` not picked up**: the dev server (`tsx server/server.ts`) doesn't hot-reload the deployment queue. Run `docker restart dokploy-devbox`.
+- **After modifying `dev/devbox/Dockerfile`**: `./scripts/dev-start.sh` rebuilds the image. The entrypoint is read from the mounted repository; an image older than 2026-11-02 embedded a frozen copy of it and must be rebuilt.
 
-- **Le devbox s'arrête au démarrage** : consulter `docker compose -f docker-compose.dev.yml logs devbox`, puis `docker exec dokploy-devbox tail -50 /var/log/dockerd.log` pour le démon interne.
-- **Port déjà utilisé** : `dev-start.sh` le signale. Le changer dans `dev/.env`.
-- **Repartir de zéro** : `./scripts/dev-reset.sh`. Il liste les volumes concernés et exige de taper `delete`.
+- **The devbox stops at startup**: check `docker compose -f docker-compose.dev.yml logs devbox`, then `docker exec dokploy-devbox tail -50 /var/log/dockerd.log` for the internal daemon.
+- **Port already in use**: `dev-start.sh` reports it. Change it in `dev/.env`.
+- **Start from scratch**: `./scripts/dev-reset.sh`. It lists the affected volumes and requires typing `delete`.

@@ -79,7 +79,7 @@ try {
 		},
 	);
 	check(
-		"scopes env/manage/exec non autorisés par l'organisation → non accordés (403)",
+		"env/manage/exec scopes not allowed by the organization → not granted (403)",
 		limitedExec.status === 403,
 		`HTTP ${limitedExec.status}`,
 	);
@@ -148,15 +148,15 @@ try {
 		"dokploy_exec_command",
 	];
 	check(
-		"tools/list expose les nouveaux outils",
+		"tools/list exposes the new tools",
 		expected.every((n) => names.includes(n)),
-		`${names.length} outils; manquants: ${expected.filter((n) => !names.includes(n)).join(", ") || "aucun"}`,
+		`${names.length} tools; missing: ${expected.filter((n) => !names.includes(n)).join(", ") || "none"}`,
 	);
 
 	const listed = data(await tool("dokploy_list_services"));
 	const demo = listed.projects?.find((p) => p.name === "Smart Deploy Demo");
 	check(
-		"dokploy_list_services : projets, environnements et services typés",
+		"dokploy_list_services: projects, environments and typed services",
 		!!demo?.environments[0]?.services.some(
 			(s) => s.serviceType === "application" && s.name === "a-healthy",
 		),
@@ -194,7 +194,7 @@ try {
 		source: { type: "docker", image: "traefik/whoami:v1.10" },
 	});
 	check(
-		"dokploy_set_application_source (image Docker)",
+		"dokploy_set_application_source (Docker image)",
 		data(source).saved === true,
 		text(source),
 	);
@@ -203,17 +203,17 @@ try {
 	const secret = `tok-${randomBytes(12).toString("hex")}`;
 	const setEnv = await tool("dokploy_set_env_vars", {
 		...appRef,
-		set: { GREETING: "bonjour", API_TOKEN: secret },
+		set: { GREETING: "hello", API_TOKEN: secret },
 	});
 	check(
-		"dokploy_set_env_vars (ajout)",
+		"dokploy_set_env_vars (add)",
 		data(setEnv).saved === true,
 		text(setEnv),
 	);
 	const envRead = await tool("dokploy_get_env_vars", appRef);
 	check(
-		"dokploy_get_env_vars : valeur normale lisible, secret masqué",
-		data(envRead).env?.GREETING === "bonjour" &&
+		"dokploy_get_env_vars: normal value readable, secret masked",
+		data(envRead).env?.GREETING === "hello" &&
 			data(envRead).env?.API_TOKEN === "[secret: set]" &&
 			!envRead.text.includes(secret),
 		JSON.stringify(data(envRead).env),
@@ -223,20 +223,20 @@ try {
 		set: { API_TOKEN: "[secret: set]" },
 	});
 	check(
-		"réécrire un placeholder masqué est refusé",
+		"rewriting a masked placeholder is rejected",
 		result(writeMask).isError === true,
 		text(writeMask),
 	);
 	await tool("dokploy_set_env_vars", { ...appRef, unset: ["GREETING"] });
 	const described = data(await tool("dokploy_get_service", appRef));
 	check(
-		"dokploy_set_env_vars (suppression) garde les autres variables",
+		"dokploy_set_env_vars (removal) keeps the other variables",
 		described.envKeys?.includes("API_TOKEN") &&
 			!described.envKeys?.includes("GREETING"),
 		JSON.stringify(described.envKeys),
 	);
 	check(
-		"dokploy_get_service ne renvoie aucun secret",
+		"dokploy_get_service returns no secret",
 		!JSON.stringify(described).includes(secret) &&
 			!("env" in described) &&
 			!("password" in described),
@@ -258,7 +258,7 @@ try {
 		dockerImage: "nginx",
 	});
 	check(
-		"réglage non applicable au type de service → refus explicite",
+		"setting not applicable to the service type → explicit refusal",
 		result(badSetting).isError === true,
 		text(badSetting),
 	);
@@ -284,7 +284,7 @@ try {
 		await wait(3000);
 		status = data(await tool("dokploy_get_service", appRef)).applicationStatus;
 	}
-	check("le déploiement se termine", status === "done", status);
+	check("the deployment finishes", status === "done", status);
 	let httpStatus = 0;
 	let body = "";
 	for (let i = 0; i < 15 && httpStatus !== 200; i++) {
@@ -292,7 +292,7 @@ try {
 		if (httpStatus !== 200) await wait(2000);
 	}
 	check(
-		"le domaine créé par MCP sert l'application",
+		"the domain created through MCP serves the application",
 		httpStatus === 200 && body.includes("Hostname"),
 		`HTTP ${httpStatus}`,
 	);
@@ -315,7 +315,7 @@ try {
 	const dbRef = { serviceType: "postgres", serviceId: db.serviceId };
 	const dbDescribed = await tool("dokploy_get_service", dbRef);
 	check(
-		"dokploy_create_service (postgres) : mot de passe généré, jamais renvoyé",
+		"dokploy_create_service (postgres): password generated, never returned",
 		!!db.serviceId && !/password/i.test(JSON.stringify(data(dbDescribed))),
 		JSON.stringify(data(dbDescribed)).slice(0, 160),
 	);
@@ -325,7 +325,7 @@ try {
 		await wait(3000);
 		status = data(await tool("dokploy_get_service", dbRef)).applicationStatus;
 	}
-	check("la base de données démarre", status === "done", status);
+	check("the database starts", status === "done", status);
 	for (let i = 0; i < 20; i++) {
 		const probe = await tool("dokploy_get_service_logs", {
 			...dbRef,
@@ -339,7 +339,7 @@ try {
 	const execArgs = { ...dbRef, command };
 	const noElicit = await tool("dokploy_exec_command", execArgs);
 	check(
-		"commande sans client compatible confirmation → refus clair",
+		"command without a confirmation-capable client → clear refusal",
 		result(noElicit).isError === true &&
 			text(noElicit).includes("does not support confirmation"),
 		text(noElicit).slice(0, 120),
@@ -348,7 +348,7 @@ try {
 	const ask = await tool("dokploy_exec_command", execArgs, {}, ELICIT);
 	const pending = result(ask);
 	check(
-		"commande → demande de confirmation (input_required) avec la commande exacte",
+		"command → confirmation request (input_required) with the exact command",
 		pending.resultType === "input_required" &&
 			pending.inputRequests?.confirm?.params?.message?.includes(command) &&
 			!!pending.requestState,
@@ -364,7 +364,7 @@ try {
 		ELICIT,
 	);
 	check(
-		"confirmation refusée → rien n'est exécuté",
+		"confirmation declined → nothing is executed",
 		result(declined).isError === true && text(declined).includes("Cancelled"),
 		text(declined),
 	);
@@ -380,7 +380,7 @@ try {
 		ELICIT,
 	);
 	check(
-		"état de confirmation falsifié → requête rejetée",
+		"forged confirmation state → request rejected",
 		!!forged.json?.error && !text(forged).includes("hello-mcp"),
 		JSON.stringify(forged.json?.error ?? result(forged)).slice(0, 120),
 	);
@@ -396,7 +396,7 @@ try {
 		ELICIT,
 	);
 	check(
-		"confirmation réutilisée pour une autre commande → nouvelle confirmation demandée",
+		"confirmation reused for another command → new confirmation requested",
 		result(swapped).resultType === "input_required" &&
 			!swapped.text.includes("swapped\\n"),
 		result(swapped).resultType,
@@ -412,7 +412,7 @@ try {
 		ELICIT,
 	);
 	check(
-		"acceptation sans état signé → nouvelle confirmation demandée",
+		"acceptance without signed state → new confirmation requested",
 		result(noState).resultType === "input_required",
 		result(noState).resultType,
 	);
@@ -429,12 +429,12 @@ try {
 	);
 	const out = data(approved);
 	check(
-		"commande confirmée → exécutée, sortie renvoyée",
+		"confirmed command → executed, output returned",
 		out.exitCode === 0 && out.stdout?.includes("hello-mcp"),
 		JSON.stringify(out).slice(0, 200),
 	);
 	check(
-		"sortie de commande : mot de passe de la base masqué",
+		"command output: database password masked",
 		out.stdout?.includes("[REDACTED") &&
 			!/hello-mcp\n[0-9a-f]{48}/.test(out.stdout),
 		out.stdout,
@@ -444,7 +444,7 @@ try {
 		command: "echo oops >&2; exit 3",
 	});
 	check(
-		"commande en échec → code de sortie et stderr",
+		"failing command → exit code and stderr",
 		data(failing.final).exitCode === 3 &&
 			result(failing.final).isError === true &&
 			data(failing.final).stderr?.includes("oops"),
@@ -454,7 +454,7 @@ try {
 	// 7. Stop (confirmed) and start
 	const stop = await confirmed("dokploy_stop_service", appRef);
 	check(
-		"dokploy_stop_service demande confirmation puis arrête",
+		"dokploy_stop_service asks for confirmation then stops",
 		result(stop.first).resultType === "input_required" &&
 			data(stop.final).stopped === true,
 		text(stop.final),
@@ -466,7 +466,7 @@ try {
 		domainId: domain.domainId,
 	});
 	check(
-		"dokploy_delete_domain (confirmé), nom d'hôte dans la question",
+		"dokploy_delete_domain (confirmed), hostname in the question",
 		result(
 			deleteDomain.first,
 		).inputRequests?.confirm?.params?.message?.includes(host) &&
@@ -486,7 +486,7 @@ try {
 	);
 	const composeRef = { serviceType: "compose", serviceId: compose.serviceId };
 	check(
-		"dokploy_create_service (compose, fichier fourni)",
+		"dokploy_create_service (compose, file provided)",
 		!!compose.serviceId,
 	);
 	await tool("dokploy_deploy_service", composeRef);
@@ -495,7 +495,7 @@ try {
 		await wait(3000);
 		status = data(await tool("dokploy_get_service", composeRef)).composeStatus;
 	}
-	check("le compose se déploie", status === "done", status);
+	check("the compose deploys", status === "done", status);
 	let composeLogs;
 	for (let i = 0; i < 10; i++) {
 		composeLogs = await tool("dokploy_get_service_logs", composeRef);
@@ -503,7 +503,7 @@ try {
 		await wait(2000);
 	}
 	check(
-		"dokploy_get_service_logs (compose, conteneur choisi)",
+		"dokploy_get_service_logs (compose, chosen container)",
 		text(composeLogs).includes("8081"),
 		text(composeLogs).slice(0, 120),
 	);
@@ -522,7 +522,7 @@ try {
 		toolCall(memberToken, name, args, {}, options);
 	const memberList = data(await memberTool("dokploy_list_services"));
 	check(
-		"membre : ne voit ni le projet restreint ni le projet de test",
+		"member: sees neither the restricted project nor the test project",
 		!memberList.projects?.some(
 			(p) => p.name === "Restricted project" || p.name === `MCP E2E ${stamp}`,
 		),
@@ -530,7 +530,7 @@ try {
 	);
 	const memberRead = await memberTool("dokploy_get_env_vars", appRef);
 	check(
-		"membre : variables d'un service non accessible → refus",
+		"member: env vars of an inaccessible service → denied",
 		result(memberRead).isError === true &&
 			!memberRead.text.includes("API_TOKEN"),
 		text(memberRead).slice(0, 120),
@@ -541,14 +541,14 @@ try {
 		ELICIT,
 	);
 	check(
-		"membre : suppression d'un service non accessible → refus avant toute confirmation",
+		"member: deleting an inaccessible service → denied before any confirmation",
 		result(memberDelete).isError === true &&
 			result(memberDelete).resultType !== "input_required",
 		text(memberDelete).slice(0, 120),
 	);
 	const memberExec = await memberTool("dokploy_exec_command", execArgs, ELICIT);
 	check(
-		"membre : commande dans un service non accessible → refus",
+		"member: command in an inaccessible service → denied",
 		result(memberExec).isError === true &&
 			result(memberExec).resultType !== "input_required",
 		text(memberExec).slice(0, 120),
@@ -560,16 +560,16 @@ try {
 	);
 
 	check(
-		"limite de mutations par client atteinte puis respectée",
+		"per-client mutation limit reached then respected",
 		rateLimited > 0,
-		`${rateLimited} attente(s)`,
+		`${rateLimited} wait(s)`,
 	);
 
 	// 10. Audit trail
 	const audit = await call("/api/mcp.auditLog?limit=200", undefined, "GET");
 	const execAudit = audit.filter((a) => a.name === "dokploy_exec_command");
 	check(
-		"audit : demande de confirmation, refus et exécution tracés",
+		"audit: confirmation request, decline and execution recorded",
 		["confirmation_requested", "declined", "ok"].every((o) =>
 			execAudit.some((a) => a.outcome === o),
 		) && !JSON.stringify(audit).includes(secret),
@@ -583,7 +583,7 @@ try {
 			deleteVolumes: ref.serviceType === "compose",
 		});
 		check(
-			`dokploy_delete_service (${ref.serviceType}, confirmé)`,
+			`dokploy_delete_service (${ref.serviceType}, confirmed)`,
 			data(removed.final).deleted === ref.serviceId,
 			text(removed.final).slice(0, 120),
 		);
@@ -592,7 +592,7 @@ try {
 		environmentId: staging.environmentId,
 	});
 	check(
-		"dokploy_delete_environment (confirmé)",
+		"dokploy_delete_environment (confirmed)",
 		data(removedEnv.final).deleted === staging.environmentId,
 		text(removedEnv.final),
 	);
@@ -601,13 +601,13 @@ try {
 	});
 	const after = data(await tool("dokploy_list_services"));
 	check(
-		"dokploy_delete_project (confirmé) → projet disparu",
+		"dokploy_delete_project (confirmed) → project gone",
 		data(removedProject.final).deleted === project.projectId &&
 			!after.projects?.some((p) => p.projectId === project.projectId),
 		text(removedProject.final),
 	);
 } catch (error) {
-	check("exécution du scénario sans exception", false, error.stack);
+	check("scenario ran without exception", false, error.stack);
 } finally {
 	for (const fn of cleanup) await fn().catch(() => {});
 	await call("/api/mcp.updateSettings", {
@@ -615,7 +615,7 @@ try {
 		allowedScopes: settings.allowedScopes,
 	});
 	console.log(
-		`(réglages MCP restaurés : ${settings.allowedScopes.join(" ")}; ${baseUrl})`,
+		`(MCP settings restored: ${settings.allowedScopes.join(" ")}; ${baseUrl})`,
 	);
 }
 

@@ -48,9 +48,9 @@ try {
 		await tool("dokploy_get_deployments", { applicationId: appA, limit: 5 }),
 	).deployments;
 	check(
-		"déploiements d'une application",
+		"application deployments",
 		appDeployments?.length > 0,
-		`${appDeployments?.length} déploiement(s)`,
+		`${appDeployments?.length} deployment(s)`,
 	);
 	const appDeploymentId = appDeployments[0].deploymentId;
 	const timeline = data(
@@ -59,11 +59,11 @@ try {
 		}),
 	);
 	check(
-		"timeline Smart Deploy d'un déploiement d'application",
+		"Smart Deploy timeline of an application deployment",
 		Array.isArray(timeline.events) &&
 			timeline.events.length > 0 &&
 			!("logPath" in timeline),
-		`${timeline.events?.length} étapes, statut ${timeline.status}`,
+		`${timeline.events?.length} steps, status ${timeline.status}`,
 	);
 	const appLogs = data(
 		await tool("dokploy_get_deployment_logs", {
@@ -71,17 +71,17 @@ try {
 			lines: 20,
 		}),
 	);
-	check("logs de build d'une application", appLogs.lines?.length > 0);
+	check("build logs of an application", appLogs.lines?.length > 0);
 
 	// 2. Compose deployments, status, logs
-	check("compose de démo F présent", !!composeF);
+	check("demo compose F present", !!composeF);
 	const composeDeployments = data(
 		await tool("dokploy_get_deployments", { composeId: composeF, limit: 5 }),
 	).deployments;
 	check(
-		"déploiements d'un compose",
+		"compose deployments",
 		composeDeployments?.length > 0,
-		`${composeDeployments?.length} déploiement(s)`,
+		`${composeDeployments?.length} deployment(s)`,
 	);
 	const composeDeploymentId = composeDeployments[0].deploymentId;
 	const composeStatus = data(
@@ -90,7 +90,7 @@ try {
 		}),
 	);
 	check(
-		"statut d'un déploiement de compose",
+		"status of a compose deployment",
 		!!composeStatus.status,
 		composeStatus.status,
 	);
@@ -101,7 +101,7 @@ try {
 		}),
 	);
 	check(
-		"logs de build d'un compose",
+		"build logs of a compose",
 		composeLogs.lines?.length > 0,
 		composeLogs.lines?.slice(-1)[0],
 	);
@@ -110,7 +110,7 @@ try {
 		composeId: composeF,
 	});
 	check(
-		"applicationId et composeId ensemble → refus explicite",
+		"applicationId and composeId together → explicit refusal",
 		result(both).isError === true,
 		text(both),
 	);
@@ -118,7 +118,7 @@ try {
 		deploymentId: composeDeploymentId,
 	});
 	check(
-		"timeline d'un compose → refus explicite (applications seulement)",
+		"compose timeline → explicit refusal (applications only)",
 		result(composeTimeline).isError === true,
 		text(composeTimeline),
 	);
@@ -130,14 +130,14 @@ try {
 		tail: 20,
 	});
 	check(
-		"logs d'exécution d'une application",
+		"runtime logs of an application",
 		!result(runtime).isError && text(runtime).length > 0,
 	);
 
 	// 4. Smart Deploy: preflight, diagnosis, fix
 	const preflight = await tool("dokploy_preflight", { applicationId: appA });
 	check(
-		"préflight Smart Deploy",
+		"Smart Deploy preflight",
 		!result(preflight).isError && Object.keys(data(preflight)).length > 0,
 		text(preflight).slice(0, 160),
 	);
@@ -149,7 +149,7 @@ try {
 			f.autoFixable && f.recommendedFix?.action?.kind === "update_domain_port",
 	)?.recommendedFix.action;
 	check(
-		"diagnostic de B : correctif de port proposé",
+		"diagnosis of B: port fix proposed",
 		!!fix,
 		JSON.stringify(fix),
 	);
@@ -158,7 +158,7 @@ try {
 		action: { kind: "redeploy_deployment", deploymentId: appDeploymentId },
 	});
 	check(
-		"correctif non proposé par le diagnostic → refusé",
+		"fix not proposed by the diagnosis → rejected",
 		result(forged).isError === true,
 		text(forged).slice(0, 160),
 	);
@@ -191,7 +191,7 @@ try {
 			"GET",
 		);
 		check(
-			"dokploy_apply_fix : port du domaine corrigé",
+			"dokploy_apply_fix: domain port fixed",
 			data(applied).applied === "update_domain_port" &&
 				after.find((d) => d.domainId === fix.domainId)?.port === fix.port,
 			text(applied).slice(0, 160),
@@ -222,7 +222,7 @@ try {
 		{ deploymentId: composeDeploymentId },
 	);
 	check(
-		"membre : déploiements et logs d'un compose non accordé → refus",
+		"member: deployments and logs of a compose not granted → denied",
 		result(memberCompose).isError === true &&
 			result(memberComposeLogs).isError === true &&
 			text(memberCompose).includes("not found or access denied"),
@@ -232,7 +232,7 @@ try {
 		clientId: memberClient.client_id,
 	});
 } catch (error) {
-	check("exécution du scénario sans exception", false, error.stack);
+	check("scenario ran without exception", false, error.stack);
 } finally {
 	if (restoreB) {
 		await restoreB();
@@ -243,7 +243,7 @@ try {
 				"GET",
 			)
 		).find((d) => d.port !== 3000);
-		check("B remis dans son état cassé de démo (mauvais port)", !!restored);
+		check("B restored to its broken demo state (wrong port)", !!restored);
 	}
 	await call("/api/mcp.revokeGrant", { clientId: client.client_id });
 }

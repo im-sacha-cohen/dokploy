@@ -1,5 +1,9 @@
 import { sanitizeArguments } from "@dokploy/server/mcp/audit";
-import { getMcpIssuer, getMcpResourceUrls } from "@dokploy/server/mcp/config";
+import {
+	getMcpIssuer,
+	getMcpResourceUrls,
+	MCP_SCOPES,
+} from "@dokploy/server/mcp/config";
 import { isMcpScope } from "@dokploy/server/mcp/grants";
 import {
 	absolutizeEndpoints,
@@ -74,7 +78,7 @@ describe("MCP configuration", () => {
 		expect(await res.json()).toMatchObject({
 			resource: RESOURCE,
 			authorization_servers: ["https://dokploy.example.com/api/auth"],
-			scopes_supported: ["mcp:read", "mcp:deploy", "mcp:config"],
+			scopes_supported: [...MCP_SCOPES],
 		});
 	});
 

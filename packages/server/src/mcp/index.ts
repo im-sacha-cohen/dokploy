@@ -7,4 +7,4 @@ export {
 	handleMcpRequest,
 	handleProtectedResourceMetadata,
 } from "./http";
-export type { McpActionDeps } from "./tools";
+export type { McpActionDeps } from "./tool-kit";

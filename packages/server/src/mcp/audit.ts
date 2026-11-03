@@ -26,7 +26,14 @@ export interface AuditEntry {
 	principal?: Partial<McpPrincipal>;
 	kind: "tool" | "resource" | "auth";
 	name: string;
-	outcome: "ok" | "denied" | "error" | "rate_limited" | "invalid";
+	outcome:
+		| "ok"
+		| "denied"
+		| "error"
+		| "rate_limited"
+		| "invalid"
+		| "confirmation_requested"
+		| "declined";
 	detail?: string;
 	targetId?: string;
 	arguments?: unknown;

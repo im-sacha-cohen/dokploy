@@ -12,7 +12,8 @@ import { getMcpIssuer, getMcpResourceUrls, MCP_SCOPES } from "./config";
 import { touchMcpGrant } from "./grants";
 import { anonymousLimiter, requestLimiter } from "./rate-limit";
 import { createMcpTokenVerifier, principalOf } from "./token";
-import { createDokployMcpServer, type McpActionDeps } from "./tools";
+import type { McpActionDeps } from "./tool-kit";
+import { createDokployMcpServer } from "./tools";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const GRANT_TOUCH_INTERVAL_MS = 60_000;

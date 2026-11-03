@@ -9,6 +9,7 @@ import {
 	sendWebResponse,
 	toWebRequest,
 } from "@/lib/web-request";
+import { callApi, execInService } from "@/server/mcp/api-bridge";
 import { enqueueApplicationJob } from "@/server/utils/enqueue-application-job";
 
 export const config = { api: { bodyParser: false, responseLimit: false } };
@@ -19,6 +20,8 @@ configureMcp({
 			application as Awaited<ReturnType<typeof findApplicationById>>,
 			job,
 		),
+	callApi,
+	execInService,
 });
 
 /** MCP Streamable HTTP endpoint, served at /mcp through a rewrite. */

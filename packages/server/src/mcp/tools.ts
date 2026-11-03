@@ -1,9 +1,9 @@
 import path from "node:path";
 import {
-	type CallToolResult,
 	McpServer,
 	ResourceTemplate,
 	requireScopes,
+	type ServerContext,
 } from "@modelcontextprotocol/server";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray } from "drizzle-orm";
@@ -42,41 +42,24 @@ import { describeSource } from "../smart-deploy/versioning/source";
 import { getVersionStatus } from "../smart-deploy/versioning/status";
 import { getEnvironmentVariablesObject } from "../utils/docker/utils";
 import { manageDomain } from "../utils/traefik/domain";
-import { writeMcpAudit } from "./audit";
-import type { McpScope } from "./config";
+import { type AuditEntry, writeMcpAudit } from "./audit";
+import { requireConfirmation, verifyConfirmationState } from "./confirm";
+import { registerPlatformTools } from "./platform-tools";
 import { mutationLimiter } from "./rate-limit";
 import type { McpPrincipal } from "./token";
+import {
+	ID,
+	json,
+	type McpActionDeps,
+	plainError,
+	type RegisterTool,
+	ToolError,
+} from "./tool-kit";
 
-type Application = Awaited<ReturnType<typeof findApplicationById>>;
-
-/** Deployment queueing lives in the Next app; it is injected here. */
-export interface McpActionDeps {
-	enqueue: (
-		application: Application,
-		job:
-			| { type: "deploy"; titleLog: string }
-			| { type: "redeploy"; titleLog: string }
-			| { type: "redeploy-version"; sourceDeploymentId: string },
-	) => Promise<void>;
-}
-
-class ToolError extends Error {}
-
-const ID = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "Invalid identifier");
 const HOSTNAME =
 	/^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 // Dokploy log names contain ":" (timestamps); the path is single-quoted in shell.
 const SAFE_LOG_PATH = /^[A-Za-z0-9_.:/-]+$/;
-
-const json = (value: unknown): CallToolResult => ({
-	content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-	structuredContent: value as Record<string, unknown>,
-});
-
-const plainError = (message: string): CallToolResult => ({
-	content: [{ type: "text", text: message }],
-	isError: true,
-});
 
 export const createDokployMcpServer = (
 	principal: McpPrincipal,
@@ -84,7 +67,10 @@ export const createDokployMcpServer = (
 ) => {
 	const server = new McpServer(
 		{ name: "dokploy", version: "1.0.0" },
-		{ capabilities: { tools: {}, resources: {} } },
+		{
+			capabilities: { tools: {}, resources: {} },
+			requestState: { verify: verifyConfirmationState },
+		},
 	);
 	const ctx: PermissionCtx = {
 		user: { id: principal.userId },
@@ -127,18 +113,7 @@ export const createDokployMcpServer = (
 		return { deployment, application };
 	};
 
-	const tool = <S extends z.ZodObject>(
-		name: string,
-		scope: McpScope,
-		config: {
-			title: string;
-			description: string;
-			input: S;
-			mutation?: boolean;
-			destructive?: boolean;
-		},
-		handler: (args: z.infer<S>) => Promise<CallToolResult>,
-	) => {
+	const tool: RegisterTool = (name, scope, config, handler) => {
 		server.registerTool(
 			name,
 			{
@@ -152,12 +127,9 @@ export const createDokployMcpServer = (
 				},
 				scopeChallenge: requireScopes(scope),
 			},
-			(async (args: z.infer<S>) => {
+			(async (args: z.infer<typeof config.input>, extra: ServerContext) => {
 				const started = Date.now();
-				const audit = (
-					outcome: "ok" | "denied" | "error" | "rate_limited",
-					detail?: string,
-				) =>
+				const audit = (outcome: AuditEntry["outcome"], detail?: string) =>
 					writeMcpAudit({
 						principal,
 						kind: "tool",
@@ -165,9 +137,17 @@ export const createDokployMcpServer = (
 						outcome,
 						detail,
 						arguments: args,
-						targetId:
-							(args as Record<string, unknown>).applicationId?.toString() ??
-							(args as Record<string, unknown>).deploymentId?.toString(),
+						targetId: [
+							"applicationId",
+							"deploymentId",
+							"serviceId",
+							"projectId",
+							"environmentId",
+							"domainId",
+							"backupId",
+						]
+							.map((key) => (args as Record<string, unknown>)[key])
+							.find((value) => typeof value === "string") as string | undefined,
 						durationMs: Date.now() - started,
 					});
 
@@ -175,18 +155,35 @@ export const createDokployMcpServer = (
 					await audit("denied", `missing scope ${scope}`);
 					return plainError(`Insufficient scope: ${scope} is required.`);
 				}
-				if (config.mutation) {
-					const wait = mutationLimiter.hit(
-						`${principal.userId}:${principal.clientId}`,
-					);
-					if (wait > 0) {
-						await audit("rate_limited");
-						return plainError(
-							`Rate limit reached for changes; retry in ${wait}s.`,
-						);
-					}
-				}
 				try {
+					if (config.confirm) {
+						const confirmation = await requireConfirmation(
+							extra,
+							principal,
+							name,
+							args,
+							await config.confirm(args),
+						);
+						if (confirmation.status === "pending") {
+							await audit("confirmation_requested");
+							return confirmation.result;
+						}
+						if (confirmation.status !== "approved") {
+							await audit("declined", confirmation.status);
+							return confirmation.result;
+						}
+					}
+					if (config.mutation) {
+						const wait = mutationLimiter.hit(
+							`${principal.userId}:${principal.clientId}`,
+						);
+						if (wait > 0) {
+							await audit("rate_limited");
+							return plainError(
+								`Rate limit reached for changes; retry in ${wait}s.`,
+							);
+						}
+					}
 					const result = await handler(args);
 					await audit(result.isError ? "error" : "ok");
 					return result;
@@ -201,10 +198,12 @@ export const createDokployMcpServer = (
 					await audit(error instanceof ToolError ? "denied" : "error", message);
 					return plainError(redact(message));
 				}
-				// biome-ignore lint/suspicious/noExplicitAny: SDK callback typing is generic over the schema
+				// The SDK callback type is generic over each tool's schema.
 			}) as any,
 		);
 	};
+
+	registerPlatformTools({ tool, principal, deps, redact });
 
 	const listAccessibleProjects = async () => {
 		const memberRecord = await findMemberByUserId(
@@ -593,7 +592,7 @@ export const createDokployMcpServer = (
 
 	const queued = (
 		action: string,
-		app: Application,
+		app: Awaited<ReturnType<typeof findApplicationById>>,
 		extra: Record<string, unknown> = {},
 	) =>
 		json({

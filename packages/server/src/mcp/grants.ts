@@ -9,7 +9,7 @@ import {
 	oauthRefreshToken,
 } from "@dokploy/server/db/schema";
 import { and, desc, eq } from "drizzle-orm";
-import { MCP_SCOPES, type McpScope } from "./config";
+import { DEFAULT_ALLOWED_SCOPES, MCP_SCOPES, type McpScope } from "./config";
 
 export const isMcpScope = (scope: string): scope is McpScope =>
 	(MCP_SCOPES as readonly string[]).includes(scope);
@@ -21,7 +21,9 @@ export const getMcpSettings = async (organizationId: string) => {
 	return {
 		organizationId,
 		enabled: row?.enabled ?? false,
-		allowedScopes: (row?.allowedScopes ?? [...MCP_SCOPES]).filter(isMcpScope),
+		allowedScopes: (row?.allowedScopes ?? [...DEFAULT_ALLOWED_SCOPES]).filter(
+			isMcpScope,
+		),
 		updatedAt: row?.updatedAt ?? null,
 	};
 };

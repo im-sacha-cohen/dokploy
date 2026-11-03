@@ -4,151 +4,18 @@
 // the negative cases (no token, tampered token, wrong host/origin, missing
 // scope, revocation, rate limit).
 // Usage: node dev/mcp/oauth-mcp-e2e.mjs
-import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
-import { baseUrl, call, login, rawGet } from "../demo-apps/api-client.mjs";
-
-const MCP_URL = `${baseUrl}/mcp`;
-const REDIRECT_URI = "http://127.0.0.1:8976/callback";
-const MODERN = "2026-07-28";
-const results = [];
-const check = (name, ok, detail = "") => {
-	results.push({ name, ok });
-	console.log(`${ok ? "✅" : "❌"} ${name}${detail ? ` — ${detail}` : ""}`);
-};
-const b64url = (buf) => buf.toString("base64url");
-let rpcId = 0;
-
-const mcp = async (
-	token,
-	method,
-	params = {},
-	{ headers = {}, modern = true } = {},
-) => {
-	const body = {
-		jsonrpc: "2.0",
-		id: ++rpcId,
-		method,
-		params: modern
-			? {
-					...params,
-					_meta: {
-						"io.modelcontextprotocol/protocolVersion": MODERN,
-						"io.modelcontextprotocol/clientInfo": {
-							name: "dokploy-e2e",
-							version: "1.0.0",
-						},
-						"io.modelcontextprotocol/clientCapabilities": {},
-					},
-				}
-			: params,
-	};
-	const res = await fetch(MCP_URL, {
-		method: "POST",
-		headers: {
-			"content-type": "application/json",
-			accept: "application/json, text/event-stream",
-			...(modern
-				? {
-						"mcp-protocol-version": MODERN,
-						"mcp-method": method,
-						...(method === "tools/call" ? { "mcp-name": params.name } : {}),
-					}
-				: {}),
-			...(token ? { authorization: `Bearer ${token}` } : {}),
-			...headers,
-		},
-		body: JSON.stringify(body),
-	});
-	const text = await res.text();
-	let json = null;
-	try {
-		json = JSON.parse(text);
-	} catch {
-		const data = text.split("\n").find((l) => l.startsWith("data:"));
-		if (data) json = JSON.parse(data.slice(5));
-	}
-	return { status: res.status, headers: res.headers, json, text };
-};
-
-const toolCall = (token, name, args = {}) =>
-	mcp(token, "tools/call", { name, arguments: args });
-
-const authorize = async (clientId, scopes, organizationId) => {
-	const verifier = b64url(randomBytes(32));
-	const challenge = b64url(createHash("sha256").update(verifier).digest());
-	const state = b64url(randomBytes(12));
-	const url = new URL(`${baseUrl}/api/auth/oauth2/authorize`);
-	url.search = new URLSearchParams({
-		response_type: "code",
-		client_id: clientId,
-		redirect_uri: REDIRECT_URI,
-		scope: `${scopes.join(" ")} offline_access`,
-		state,
-		code_challenge: challenge,
-		code_challenge_method: "S256",
-		resource: MCP_URL,
-	}).toString();
-	const res = await rawGet(url.toString());
-	// better-auth answers with a 302 for browsers and with {redirect, url} otherwise.
-	const location =
-		res.headers.get("location") ??
-		(await res.json().catch(() => ({}))).url ??
-		"";
-	const consentUrl = new URL(location, baseUrl);
-	check(
-		"authorize → redirection vers la page de consentement",
-		consentUrl.pathname === "/oauth/consent",
-		consentUrl.pathname,
-	);
-
-	await call("/api/mcp.recordGrant", { clientId, organizationId, scopes });
-	const consent = await call("/api/auth/oauth2/consent", {
-		accept: true,
-		scope: `${scopes.join(" ")} offline_access`,
-		oauth_query: consentUrl.search.slice(1),
-	});
-	const redirect = new URL(consent.url ?? consent.redirect_uri);
-	check(
-		"consentement → code renvoyé à l'URI enregistrée",
-		redirect.origin + redirect.pathname === REDIRECT_URI &&
-			redirect.searchParams.get("state") === state,
-	);
-	const code = redirect.searchParams.get("code");
-
-	const tokenRes = await fetch(`${baseUrl}/api/auth/oauth2/token`, {
-		method: "POST",
-		headers: { "content-type": "application/x-www-form-urlencoded" },
-		body: new URLSearchParams({
-			grant_type: "authorization_code",
-			code,
-			redirect_uri: REDIRECT_URI,
-			client_id: clientId,
-			code_verifier: verifier,
-			resource: MCP_URL,
-		}),
-	});
-	const tokens = await tokenRes.json();
-	check(
-		"échange du code avec PKCE",
-		tokenRes.ok && !!tokens.access_token,
-		`HTTP ${tokenRes.status} ${tokens.error ?? ""}`,
-	);
-	const replay = await fetch(`${baseUrl}/api/auth/oauth2/token`, {
-		method: "POST",
-		headers: { "content-type": "application/x-www-form-urlencoded" },
-		body: new URLSearchParams({
-			grant_type: "authorization_code",
-			code,
-			redirect_uri: REDIRECT_URI,
-			client_id: clientId,
-			code_verifier: verifier,
-			resource: MCP_URL,
-		}),
-	});
-	check("rejeu du code refusé", !replay.ok, `HTTP ${replay.status}`);
-	return tokens;
-};
+import { baseUrl, call, login } from "../demo-apps/api-client.mjs";
+import {
+	authorize,
+	b64url,
+	check,
+	MCP_URL,
+	mcp,
+	REDIRECT_URI,
+	summarize,
+	toolCall,
+} from "./mcp-client.mjs";
 
 await login();
 
@@ -510,8 +377,4 @@ check(
 	`${burst.filter((r) => r.status === 429).length} × 429`,
 );
 
-const failed = results.filter((r) => !r.ok);
-console.log(
-	`\n${results.length - failed.length}/${results.length} vérifications réussies`,
-);
-process.exitCode = failed.length ? 1 : 0;
+summarize();

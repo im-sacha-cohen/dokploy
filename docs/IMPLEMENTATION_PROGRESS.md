@@ -104,7 +104,17 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
 - `diagnostics/presentation.ts` (pur) et 6 tests unitaires (73 au total dans smart-deploy).
 - Vérifié dans le navigateur sur A (sain), B (port), C (crash) et G (localhost).
 
+### 03/11/2026 — MCP « tout faire »
+- Commit précédent : `35f1217` (UX erreurs et ports).
+- 25 nouveaux outils (44 au total) : services de tous types, logs, variables, réglages, source, build, compose, domaines, création et suppression, backups, commande dans un conteneur.
+- Pont `apps/dokploy/server/mcp/api-bridge.ts` : les outils appellent les procédures tRPC de l'UI (liste blanche `mcp/api-paths.ts`), donc mêmes permissions.
+- Nouveaux scopes `mcp:env`, `mcp:manage`, `mcp:exec`, désactivés par défaut ; avertissements dans Settings › AI Integrations.
+- Confirmation humaine par elicitation, avec état HMAC lié à l'appel (`mcp/confirm.ts`), pour les suppressions, l'arrêt, la restauration et chaque commande.
+- Bugs trouvés par le e2e et corrigés : déploiement d'application absent de la liste blanche, identifiant de projet non renvoyé, choix du conteneur quand une app a plusieurs tâches.
+- Tests : 80 unitaires, `platform-e2e.mjs` 59/59, `run-all.sh` entièrement OK (dont isolation 27/27), suite complète 1677 passés (seul le timeout connu de `backup-files` échoue, 14/14 seul).
+
 ## Décisions validées
 - Environnement local : devbox Docker-in-Docker.
 - Images taguées par déploiement (`<app>:<deploymentId>`), conservation des 5 dernières.
 - OAuth : `@better-auth/oauth-provider` greffé sur l'auth better-auth existante (mêmes comptes, login, 2FA, SSO).
+- MCP « tout faire » (choix utilisateur du 02/11/2026) : écriture des secrets autorisée, lecture sans les secrets ; actions destructrices avec confirmation ; commande libre avec confirmation (l'interdiction initiale du brief est levée pour `mcp:exec` uniquement).

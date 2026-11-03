@@ -9,7 +9,9 @@ permission effective = scopes du token ∩ scopes du grant (cases cochées au co
                      ∩ scopes autorisés par l'organisation ∩ permissions Dokploy de l'utilisateur
 ```
 
-Les trois premiers termes sont recalculés à chaque requête (`mcp/token.ts`). Le quatrième est appliqué par chaque outil avec les fonctions de permission de Dokploy (`checkServiceAccess`, `checkServicePermissionAndAccess`, `checkPermission`, projets, environnements et services accessibles d'un membre), exactement comme pour les routes tRPC. Chaque objet est en plus vérifié comme appartenant à l'organisation du grant.
+Les trois premiers termes sont recalculés à chaque requête (`mcp/token.ts`). Le quatrième est appliqué de deux façons :
+- les outils de `platform-tools.ts` appellent **les procédures tRPC de l'UI elles-mêmes** (`api-bridge.ts`), avec le contexte que Dokploy construit déjà pour une clé d'API de cet utilisateur dans cette organisation (rôle du membre relu en base à chaque appel). Seules les procédures de `mcp/api-paths.ts` sont appelables ;
+- les autres outils appellent les fonctions de permission de Dokploy (`checkServiceAccess`, `checkServicePermissionAndAccess`, `checkPermission`, projets, environnements et services accessibles d'un membre), exactement comme pour les routes tRPC. Chaque objet est en plus vérifié comme appartenant à l'organisation du grant.
 
 ## OAuth 2.1
 
@@ -35,6 +37,28 @@ La page `/oauth/consent` affiche le nom du client, ses domaines de redirection, 
 - Une permission non autorisée par l'organisation est grisée.
 - Si l'intégration est désactivée dans toutes les organisations de l'utilisateur, aucune autorisation n'est possible.
 
+## Scopes étendus et confirmation humaine
+
+| Scope | Par défaut | Risque couvert |
+|---|---|---|
+| `mcp:env` | désactivé | lecture des variables (secrets masqués), écriture |
+| `mcp:manage` | désactivé | création et suppression de projets, environnements et services ; arrêt ; backups et restauration |
+| `mcp:exec` | désactivé | commande libre dans un conteneur d'un service |
+
+Un owner ou un admin les autorise par organisation. Le consentement ne propose que les scopes autorisés, et le grant est revérifié à chaque requête : retirer un scope coupe l'accès immédiatement.
+
+**Actions confirmées** : suppression (service, environnement, projet, domaine), arrêt de service, restauration de backup et chaque commande. Garanties :
+- l'état de confirmation est **signé (HMAC-SHA256)** avec une clé dérivée de `BETTER_AUTH_SECRET`. Il expire au bout de 5 min et lie la confirmation à l'outil, à l'empreinte SHA-256 des arguments, à l'utilisateur, au client et au grant. Un état modifié est rejeté (`-32602`). Un état réutilisé pour une autre commande ou sans signature redemande une confirmation (testé) ;
+- les vérifications de permission et d'existence ont lieu **avant** la question : un membre sans accès est refusé sans voir de confirmation (testé) ;
+- un refus (`decline`/`cancel`) n'exécute rien et est journalisé (`declined`) ; une demande est journalisée (`confirmation_requested`).
+
+**Commande dans un conteneur** (`mcp:exec`) :
+- mêmes contrôles que le terminal de conteneur de l'UI : accès au service, conteneur appartenant au service (labels Docker), identifiant validé, serveur de l'organisation ;
+- arguments passés à `docker exec` sous forme de liste échappée (`shell-quote`) : la commande ne s'exécute que dans le conteneur, jamais dans le shell de l'hôte ;
+- délai maximal de 120 s (`timeout -k 5`), sortie limitée et nettoyée (valeurs d'environnement du service, mots de passe de la base, motifs de secrets), commande enregistrée dans l'audit après nettoyage.
+
+**Écriture de secrets** : autorisée (`set_env_vars`, identifiants de registre). Écrire en retour un placeholder masqué (`[secret: …]`, `[REDACTED…]`) est refusé, pour ne pas écraser une vraie valeur. Les valeurs écrites ne sont jamais stockées dans l'audit (seuls les noms le sont).
+
 ## Protection de l'endpoint `/mcp`
 
 | Menace | Contrôle |
@@ -45,21 +69,21 @@ La page `/oauth/consent` affiche le nom du client, ses domaines de redirection, 
 | Abus d'un client | 120 requêtes/min et 10 mutations/min par couple utilisateur/client → **429** |
 | Entrées malformées | schémas zod stricts (identifiants `[A-Za-z0-9_-]{1,64}`, ports 1–65535, hostnames, chemins) ; JSON invalide et corps > 1 Mio refusés |
 | Oracle d'existence | « application inconnue » et « accès refusé » donnent la même réponse |
-| Fuite de secrets | valeurs d'environnement jamais renvoyées (seulement les noms, et seulement avec la permission `envVars.read`) ; logs passés au redactor (valeurs configurées, mots de passe, tokens, JWT, clés AWS et PEM) |
+| Fuite de secrets | variables dont le nom évoque un secret masquées (`[secret: set]`), autres valeurs nettoyées (identifiants dans les URLs, secrets connus) ; mots de passe de base, clés SSH et identifiants de registre jamais renvoyés ; logs et sorties de commande passés au redactor (valeurs configurées, mots de passe, tokens, JWT, clés AWS et PEM) |
 | Injection dans les logs | séquences ANSI et caractères de contrôle supprimés, lignes tronquées ; même nettoyage pour les arguments stockés dans l'audit |
-| Exécution arbitraire | aucun outil de shell ou `docker exec` ; les seules commandes exécutées sont fixes et internes (lecture de log par `tail` sur un chemin validé sous `LOGS_PATH`) |
+| Exécution arbitraire | seulement via `dokploy_exec_command` : scope `mcp:exec` désactivé par défaut, confirmation humaine à chaque commande, conteneur du service uniquement. Les autres commandes exécutées sont fixes et internes (lecture de log par `tail` sur un chemin validé sous `LOGS_PATH`) |
 | Isolation | grant lié à une organisation ; objets d'autres organisations ou projets non accordés → « not found or access denied » |
 | Interruption client | `AbortSignal` propagé à la requête ; écriture de réponse arrêtée à la fermeture de la connexion |
 
 ## Journal d'audit
 
 `mcp_audit_log` enregistre :
-- chaque appel d'outil ou lecture de ressource : utilisateur, client, organisation, cible, durée, résultat `ok`, `denied`, `error` ou `rate_limited` ;
+- chaque appel d'outil ou lecture de ressource : utilisateur, client, organisation, cible, durée, résultat `ok`, `denied`, `error`, `rate_limited`, `confirmation_requested` ou `declined` ;
 - chaque token rejeté, consentement, révocation et changement de réglages.
 
 Les arguments sont réduits aux scalaires, puis nettoyés. Le journal est visible dans Settings › AI Integrations : en entier pour les owners et admins, limité à ses propres entrées pour un membre.
 
-Le journal d'audit natif de Dokploy (`audit_log`) n'est pas utilisé : il relève du code sous licence propriétaire et dépend d'une licence entreprise.
+Le journal d'audit natif de Dokploy (`audit_log`) n'est pas alimenté directement par MCP : il relève du code sous licence propriétaire et dépend d'une licence entreprise. Les procédures tRPC appelées par le pont y écrivent toutefois comme pour l'UI, au nom de l'utilisateur, lorsque ce journal est actif.
 
 ## Rôles
 
@@ -71,6 +95,11 @@ Le journal d'audit natif de Dokploy (`audit_log`) n'est pas utilisé : il relèv
 | Voir et révoquer tous les clients, voir tout l'audit | owner ou admin |
 
 ## Limites et points ouverts
+
+- **La confirmation repose sur le client** : le serveur ne peut pas prouver qu'un humain a répondu. Il garantit seulement qu'une question a été posée pour cet appel exact et que la réponse est revenue avec l'état signé. Un client malveillant détenant un token `mcp:exec` peut répondre lui-même. C'est pourquoi `mcp:exec` et `mcp:manage` sont désactivés par défaut.
+- **État de confirmation lisible** : il est signé, pas chiffré. Le client peut y lire les identifiants internes de l'utilisateur, du client et du grant, qu'il connaît déjà.
+- **Timeout de commande** : `timeout` arrête le client `docker exec`. Un processus lancé dans le conteneur qui ignore le signal peut survivre.
+- **Backups** : `run_backup`, `list_backup_files` et `restore_backup` n'ont pas été testés en réel, faute de destination S3 dans l'environnement local.
 
 - **Enregistrement dynamique non authentifié** : un tiers peut créer des entrées `oauth_client` sans pouvoir rien en faire sans consentement utilisateur. Il n'y a pas encore de purge des clients jamais autorisés, ni de limite de débit dédiée sur `/oauth2/register` : seule la limitation générique de better-auth, active par défaut en production, s'applique.
 - **Refresh token** : il n'est pas lié à l'appareil (pas de DPoP).

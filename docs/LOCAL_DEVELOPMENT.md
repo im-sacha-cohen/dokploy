@@ -110,6 +110,8 @@ Pour le scénario E : `docker exec dokploy-devbox /workspace/dev/demo-apps/e-out
 
 ## Dépannage
 
+- **L'instance ne démarre plus après un redémarrage, avec `could not add service state for endpoint dokploy-traefik-previous`** : le setup d'upstream renomme le conteneur Traefik, et le Docker interne garde un endpoint réseau périmé. Supprimer le conteneur pour que le setup le recrée : `docker exec dokploy-devbox docker rm -f dokploy-traefik`, puis `docker restart dokploy-devbox`.
+- **`tsc` de l'app tué (`Killed`)** : le typecheck complet et le serveur de dev ne tiennent pas ensemble dans la mémoire du devbox. Lancer `tsc` juste après un redémarrage du devbox.
 - **Code modifié dans `packages/server` non pris en compte** : le serveur de dev (`tsx server/server.ts`) ne recharge pas à chaud la file de déploiement. Lancer `docker restart dokploy-devbox`.
 - **Après modification de `dev/devbox/Dockerfile`** : `./scripts/dev-start.sh` reconstruit l'image. L'entrypoint est lu depuis le dépôt monté ; une image antérieure au 02/11/2026 en embarquait une copie figée et doit être reconstruite.
 

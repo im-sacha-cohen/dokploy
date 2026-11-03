@@ -134,6 +134,45 @@ Reprise après connexion vérifiée : sans session, l'autorisation redirige vers
 - retirer un scope dans l'organisation donne 403 immédiat, et désactiver l'intégration donne 401 immédiat ;
 - un membre ne voit que ses propres clients et son propre audit, et ne peut pas révoquer ceux des autres, alors qu'un admin le peut, avec effet immédiat.
 
+## MCP « tout faire » (03/11/2026)
+
+| Mesure | Résultat |
+|---|---|
+| Tests unitaires smart-deploy | **80/80** (dont `mcp-confirm.test.ts` : confirmation, état falsifié, autre client, autres arguments, client sans elicitation, liste blanche d'API, scopes par défaut) |
+| Scénario complet en réel | `dev/mcp/platform-e2e.mjs` : **59/59** |
+| OAuth + MCP existant | `dev/mcp/oauth-mcp-e2e.mjs` : 36/36 (après mutualisation des helpers dans `dev/mcp/mcp-client.mjs`) |
+| Tous les scénarios Phase 7 | `dev/phase7/run-all.sh` : diagnostics A–G OK, version E 22/22, isolation 27/27, OAuth + MCP 36/36 |
+| Suite complète | **1677 passés**, 1 en échec, 6 ignorés (1684) ; l'échec est le timeout connu de `backup-files.test.ts` sous charge (14/14 lancé seul) |
+
+`platform-e2e.mjs` fait tout passer par MCP, dans un projet jetable supprimé à la fin :
+- scopes `env`/`manage`/`exec` non accordés tant que l'organisation ne les autorise pas (403) ;
+- création de projet, d'environnement, d'application (image Docker), de Postgres et d'un compose ;
+- variables : secret masqué à la lecture, placeholder masqué refusé à l'écriture, suppression sans toucher aux autres ;
+- réglages, domaine créé puis servi par Traefik (HTTP 200), déploiement, logs d'application et de compose ;
+- commande dans le conteneur Postgres :
+  - refus clair pour un client sans elicitation ;
+  - question contenant la commande exacte ;
+  - refus utilisateur sans exécution ;
+  - état falsifié rejeté (`-32602`) ;
+  - état réutilisé pour une autre commande ou absent : nouvelle question ;
+  - exécution confirmée, mot de passe de la base masqué dans la sortie ;
+  - code de sortie et stderr d'une commande en échec ;
+- arrêt (confirmé) puis démarrage, suppression de domaine confirmée (le nom d'hôte figure dans la question) ;
+- membre restreint : ne voit pas le projet, refus sur les variables, la suppression et la commande, **avant** toute confirmation ;
+- limite de 10 mutations/min atteinte puis respectée ; audit avec `confirmation_requested`, `declined` et `ok`, sans secret ;
+- suppression confirmée des services, de l'environnement et du projet.
+
+Incidents pendant les essais, sans lien avec le code :
+- **Docker Desktop arrêté** en cours de run, probablement faute de mémoire : le typecheck complet de l'app ne tient pas à côté du serveur de dev dans le devbox. Lancer `tsc` juste après un redémarrage du devbox.
+- **Au redémarrage, le setup Traefik d'upstream échouait** (`could not add service state for endpoint dokploy-traefik-previous`) : endpoint réseau périmé dans le Docker interne. Correctif : `docker exec dokploy-devbox docker rm -f dokploy-traefik`, puis `docker restart dokploy-devbox` (le setup recrée Traefik).
+- **Mise en veille du Mac** pendant un run : l'état de confirmation (5 min) puis le token d'accès (15 min) ont expiré, et ont été correctement refusés. Lancer les e2e longs sous `caffeinate -dims`.
+
+Non testé en réel :
+- `run_backup`, `list_backup_files` et `restore_backup` : pas de destination S3 dans l'environnement local ;
+- `set_application_source` en Git et en GitHub, `set_build_type` : seule la source image Docker a été jouée ;
+- `cancel_deployment` ;
+- un client MCP du commerce avec elicitation (Claude Code…) : le flux a été joué par le client de test, qui suit le protocole 2026-07-28.
+
 ## Tests manuels de référence (applications de démo)
 
 Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.
@@ -149,5 +188,6 @@ Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonst
 | Timeline / statut de vérification | intégration (devbox) + UI | ✅ A–G réels ; timeline UI testée dans le navigateur |
 | Preflight, applyFix, UI | unitaires + navigateur | ✅ 14 tests unitaires ; parcours réels (voir Phase 5) |
 | OAuth (PKCE, audience, expiration, révocation) | API + navigateur | ✅ 36/36 en réel (`dev/mcp/oauth-mcp-e2e.mjs`) ; consentement testé dans le navigateur |
-| MCP (outils, scopes, isolation projet, injection de logs) | API | ✅ outils, scopes, refus et redaction en réel ; isolation multi-utilisateurs à faire (Phase 7) ; MCP Inspector non utilisé |
+| MCP (outils, scopes, isolation projet, injection de logs) | API | ✅ outils, scopes, refus et redaction en réel ; isolation multi-utilisateurs 27/27 (Phase 7) ; MCP Inspector non utilisé |
+| MCP étendu (services, env, commande, confirmation humaine) | unitaires + API | ✅ 80 unitaires ; 59/59 en réel (`dev/mcp/platform-e2e.mjs`) ; backups non testés (pas de S3 local) |
 | Non-régression | suite upstream complète | référence ci-dessus |

@@ -1,12 +1,36 @@
-export const MCP_SCOPES = ["mcp:read", "mcp:deploy", "mcp:config"] as const;
+export const MCP_SCOPES = [
+	"mcp:read",
+	"mcp:deploy",
+	"mcp:config",
+	"mcp:env",
+	"mcp:manage",
+	"mcp:exec",
+] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
+
+/**
+ * Scopes an organization allows until an admin changes it. The broader ones
+ * (environment variables, create/delete, commands) must be opted into.
+ */
+export const DEFAULT_ALLOWED_SCOPES: readonly McpScope[] = [
+	"mcp:read",
+	"mcp:deploy",
+	"mcp:config",
+];
 
 export const MCP_SCOPE_DESCRIPTIONS: Record<McpScope, string> = {
 	"mcp:read":
-		"Read projects, applications, deployments, logs (redacted), health and diagnostics",
+		"Read projects, services, deployments, logs (redacted), health and diagnostics",
 	"mcp:deploy":
-		"Deploy, rebuild, restart and roll back applications you are allowed to deploy",
-	"mcp:config": "Change an application's domain port, domain and healthcheck",
+		"Deploy, rebuild, restart, start and roll back services you are allowed to deploy",
+	"mcp:config":
+		"Change service settings, source, build type, domains and healthcheck",
+	"mcp:env":
+		"Read environment variables (secret values masked) and set or remove variables",
+	"mcp:manage":
+		"Create and delete projects, environments and services, stop services, run and restore backups (destructive actions ask for confirmation)",
+	"mcp:exec":
+		"Run a command inside a service's container, after a human confirms each command",
 };
 
 export const OAUTH_SCOPES = [...MCP_SCOPES, "offline_access"] as const;

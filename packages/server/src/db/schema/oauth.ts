@@ -189,7 +189,15 @@ export const mcpAuditLog = pgTable(
 		name: text("name").notNull(),
 		outcome: text("outcome")
 			.notNull()
-			.$type<"ok" | "denied" | "error" | "rate_limited" | "invalid">(),
+			.$type<
+				| "ok"
+				| "denied"
+				| "error"
+				| "rate_limited"
+				| "invalid"
+				| "confirmation_requested"
+				| "declined"
+			>(),
 		detail: text("detail"),
 		targetId: text("target_id"),
 		arguments: json("arguments").$type<Record<string, unknown>>(),

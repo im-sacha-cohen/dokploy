@@ -26,14 +26,23 @@ import {
 } from "@/components/ui/table";
 import { api, type RouterOutputs } from "@/utils/api";
 
-type Scope = "mcp:read" | "mcp:deploy" | "mcp:config";
-const SCOPES: Scope[] = ["mcp:read", "mcp:deploy", "mcp:config"];
+type Scope = RouterOutputs["mcp"]["getSettings"]["allowedScopes"][number];
+
+/** Shown under scopes that let an agent destroy data or run arbitrary code. */
+const SCOPE_WARNING: Partial<Record<Scope, string>> = {
+	"mcp:manage":
+		"Can delete projects and services. Each deletion, stop or restore is confirmed by a human in the AI client.",
+	"mcp:exec":
+		"Runs any command in a service's container, with the service's privileges. Each command is confirmed by a human in the AI client.",
+};
 
 const OUTCOME_VARIANT: Record<
 	string,
 	"green" | "red" | "orange" | "yellow" | "outline"
 > = {
 	ok: "green",
+	confirmation_requested: "outline",
+	declined: "yellow",
 	denied: "orange",
 	error: "red",
 	rate_limited: "yellow",
@@ -126,7 +135,7 @@ const SettingsCard = ({
 
 				<div className="flex flex-col gap-3">
 					<Label>Permissions clients may request</Label>
-					{SCOPES.map((scope) => (
+					{(Object.keys(settings.scopeDescriptions) as Scope[]).map((scope) => (
 						<div key={scope} className="flex items-start gap-3">
 							<Checkbox
 								id={`allowed-${scope}`}
@@ -147,6 +156,11 @@ const SettingsCard = ({
 								<span className="text-sm text-muted-foreground">
 									{settings.scopeDescriptions[scope]}
 								</span>
+								{SCOPE_WARNING[scope] && (
+									<span className="text-sm text-orange-700 dark:text-orange-300">
+										{SCOPE_WARNING[scope]}
+									</span>
+								)}
 							</div>
 						</div>
 					))}

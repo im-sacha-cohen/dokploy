@@ -15,7 +15,11 @@ import {
 	findApplicationById,
 	updateApplication,
 } from "../services/application";
-import { findDeploymentById } from "../services/deployment";
+import { findComposeById } from "../services/compose";
+import {
+	findAllDeploymentsByComposeId,
+	findDeploymentById,
+} from "../services/deployment";
 import { findDomainById, updateDomainById } from "../services/domain";
 import {
 	checkPermission,
@@ -111,6 +115,56 @@ export const createDokployMcpServer = (
 			deployment: ["read"],
 		});
 		return { deployment, application };
+	};
+
+	/** A deployment of an application or a compose stack, with what its logs need. */
+	const loadAnyDeployment = async (deploymentId: string) => {
+		const deployment = await findDeploymentById(deploymentId).catch(() => null);
+		if (deployment?.applicationId) {
+			const { application } = await loadDeployment(deploymentId);
+			return {
+				deployment,
+				serverId:
+					deployment.buildServerId ||
+					deployment.serverId ||
+					application.serverId,
+				env: [
+					application.env,
+					application.environment.project.env,
+					application.environment.env,
+				] as const,
+			};
+		}
+		if (!deployment?.composeId) {
+			throw new ToolError("Deployment not found or access denied");
+		}
+		const compose = await loadCompose(deployment.composeId);
+		return {
+			deployment,
+			serverId: deployment.serverId || compose.serverId,
+			env: [
+				compose.env,
+				compose.environment.project.env,
+				compose.environment.env,
+			] as const,
+		};
+	};
+
+	const loadCompose = async (composeId: string) => {
+		try {
+			await checkServicePermissionAndAccess(ctx, composeId, {
+				deployment: ["read"],
+			});
+			const compose = await findComposeById(composeId);
+			if (
+				compose.environment.project.organizationId !== principal.organizationId
+			) {
+				throw new ToolError("Compose not found");
+			}
+			return compose;
+		} catch {
+			throw new ToolError("Compose not found or access denied");
+		}
 	};
 
 	const tool: RegisterTool = (name, scope, config, handler) => {
@@ -355,17 +409,27 @@ export const createDokployMcpServer = (
 		{
 			title: "Get deployments",
 			description:
-				"Recent deployments of an application with the version actually built and verified.",
+				"Recent deployments of an application (with the version actually built and verified) or of a compose stack. Pass applicationId or composeId.",
 			input: z.object({
-				applicationId: ID,
+				applicationId: ID.optional(),
+				composeId: ID.optional(),
 				limit: z.number().int().min(1).max(50).default(10),
 			}),
 		},
-		async ({ applicationId, limit }) => {
-			const app = await loadApplication(applicationId, {
-				deployment: ["read"],
-			});
-			const deployments = [...app.deployments]
+		async ({ applicationId, composeId, limit }) => {
+			if (!applicationId === !composeId) {
+				throw new ToolError("Pass either applicationId or composeId.");
+			}
+			let source: Awaited<ReturnType<typeof findAllDeploymentsByComposeId>>;
+			if (applicationId) {
+				source = (
+					await loadApplication(applicationId, { deployment: ["read"] })
+				).deployments;
+			} else {
+				await loadCompose(composeId as string);
+				source = await findAllDeploymentsByComposeId(composeId as string);
+			}
+			const deployments = [...source]
 				.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 				.slice(0, limit)
 				.map((d) => ({
@@ -389,11 +453,11 @@ export const createDokployMcpServer = (
 		{
 			title: "Get deployment status",
 			description:
-				"Step-by-step status of a deployment: build, container created, running, healthy, reachable.",
+				"Status of a deployment (application or compose). For applications, step by step: build, container created, running, healthy, reachable.",
 			input: z.object({ deploymentId: ID }),
 		},
 		async ({ deploymentId }) => {
-			const { deployment } = await loadDeployment(deploymentId);
+			const { deployment } = await loadAnyDeployment(deploymentId);
 			return json({
 				deploymentId,
 				kind: deployment.kind,
@@ -416,16 +480,18 @@ export const createDokployMcpServer = (
 		{
 			title: "Get deployment logs",
 			description:
-				"Last lines of a deployment's build log. Secrets and terminal escape sequences are removed.",
+				"Last lines of a deployment's build log (application or compose). Secrets and terminal escape sequences are removed.",
 			input: z.object({
 				deploymentId: ID,
 				lines: z.number().int().min(1).max(500).default(100),
 			}),
 		},
 		async ({ deploymentId, lines }) => {
-			const { deployment, application } = await loadDeployment(deploymentId);
-			const serverId =
-				deployment.buildServerId || deployment.serverId || application.serverId;
+			const {
+				deployment,
+				serverId,
+				env: envSources,
+			} = await loadAnyDeployment(deploymentId);
 			const logsRoot = paths(!!serverId).LOGS_PATH;
 			const logPath = path.normalize(deployment.logPath);
 			if (!SAFE_LOG_PATH.test(logPath) || !logPath.startsWith(`${logsRoot}/`)) {
@@ -437,11 +503,7 @@ export const createDokployMcpServer = (
 			);
 			let env: Record<string, string> = {};
 			try {
-				env = getEnvironmentVariablesObject(
-					application.env,
-					application.environment.project.env,
-					application.environment.env,
-				);
+				env = getEnvironmentVariablesObject(...envSources);
 			} catch {
 				env = {};
 			}

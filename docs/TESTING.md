@@ -173,6 +173,38 @@ Non testé en réel :
 - `cancel_deployment` ;
 - un client MCP du commerce avec elicitation (Claude Code…) : le flux a été joué par le client de test, qui suit le protocole 2026-07-28.
 
+## Domaine + enregistrement DNS depuis le formulaire (03/11/2026)
+
+| Mesure | Résultat |
+|---|---|
+| Tests unitaires (`domain-dns.test.ts`) | labels (accents, longueur), noms qualifiés, suggestion qui saute les noms pris, réutilisation d'un nom pointant déjà ici, conflits A/AAAA/CNAME, TXT/MX ignorés, classement des IP ; smart-deploy + traefik : **227/227** |
+| Typecheck | serveur et app sans erreur |
+| Navigateur, zone réelle `sacha-cohen.fr` (lecture seule) | suggestion `a-healthy.sacha-cohen.fr` disponible ; `www` signalé comme pris (CNAME existant) ; `bad_name` refusé ; Host rempli automatiquement |
+| API sans écriture | nom pris → **409** ; IP étrangère au serveur → **400** ; 0 domaine et 0 enregistrement créés (46 enregistrements avant et après) |
+| Création et suppression réelles | `dev/dns/domain-dns-e2e.mjs` (UI + MCP) : **non lancé**, en attente d'une zone de test autorisée |
+
+`domain-dns-e2e.mjs` refuse de tourner sans `DNS_E2E_ZONE` et `DNS_E2E_CONFIRM=yes`. Il n'utilise que des noms `dokploy-e2e-*` absents au départ, et vérifie à la fin qu'il n'en reste aucun.
+
+## MCP : déploiements, Smart Deploy et logs (03/11/2026)
+
+`dev/mcp/deployments-e2e.mjs` : **24/24** en réel, via le tunnel :
+- déploiements, statut et logs de build d'une application et d'un compose ;
+- timeline Smart Deploy (6 étapes) ; refus explicite pour un compose ;
+- logs d'exécution ;
+- préflight ;
+- diagnostic de B, puis application du correctif de port proposé ; un correctif non proposé par le diagnostic est refusé. B est remis dans son état cassé de démo (502 vérifié via Traefik) ;
+- membre restreint : déploiements et logs d'un compose non accordé refusés.
+
+Non-régression, rejouée via le tunnel :
+- `platform-e2e.mjs` : 59/59 ;
+- `oauth-mcp-e2e.mjs` : 35/36. Le contrôle « Host inconnu → 421 » reçoit 409, car c'est Cloudflare qui rejette le Host usurpé avant Dokploy. En direct sur `127.0.0.1:3000`, Dokploy renvoie bien 421.
+
+Pour lancer ces scripts tant que `localhost:3000` est pris par un autre serveur ou que `/mcp` passe par un tunnel :
+
+```bash
+DOKPLOY_DEV_URL=http://127.0.0.1:3000 DOKPLOY_MCP_URL=https://<tunnel>/mcp node dev/mcp/deployments-e2e.mjs
+```
+
 ## Tests manuels de référence (applications de démo)
 
 Voir `docs/LOCAL_DEVELOPMENT.md` › *Compte de test et applications de démonstration* : avec le moteur upstream, 7 déploiements sont `done`, dont 4 applications en 502.

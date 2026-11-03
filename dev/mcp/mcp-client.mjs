@@ -4,7 +4,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { baseUrl, call, rawGet } from "../demo-apps/api-client.mjs";
 
-export const MCP_URL = `${baseUrl}/mcp`;
+// DOKPLOY_MCP_URL: public MCP URL when the instance is reached through a tunnel.
+export const MCP_URL = process.env.DOKPLOY_MCP_URL || `${baseUrl}/mcp`;
 export const REDIRECT_URI = "http://127.0.0.1:8976/callback";
 export const MODERN = "2026-07-28";
 export const results = [];

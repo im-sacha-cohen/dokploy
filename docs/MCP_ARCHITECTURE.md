@@ -46,10 +46,10 @@ La logique métier est **partagée entre l'UI et MCP** : un outil MCP appelle le
 
 | Scope | Outils |
 |---|---|
-| `mcp:read` | `dokploy_list_projects`, `dokploy_list_applications`, `dokploy_get_application`, `dokploy_get_deployments`, `dokploy_get_deployment_status`, `dokploy_get_deployment_logs`, `dokploy_get_runtime_version`, `dokploy_get_application_health`, `dokploy_get_port_configuration`, `dokploy_diagnose_deployment`, `dokploy_list_servers` |
+| `mcp:read` | `dokploy_list_projects`, `dokploy_list_applications`, `dokploy_get_application`, `dokploy_get_deployments` (application ou compose), `dokploy_get_deployment_status` et `dokploy_get_deployment_logs` (logs de build, application ou compose), `dokploy_get_deployment_timeline` (Smart Deploy), `dokploy_preflight` (Smart Deploy, ne change rien), `dokploy_get_runtime_version`, `dokploy_get_application_health`, `dokploy_get_port_configuration`, `dokploy_diagnose_deployment`, `dokploy_list_servers` |
 | `mcp:deploy` | `dokploy_deploy_application`, `dokploy_deploy_latest`, `dokploy_rebuild_application`, `dokploy_restart_application`, `dokploy_rollback_deployment` |
-| `mcp:read` (suite) | `dokploy_list_services` (tous types de services), `dokploy_get_service`, `dokploy_get_service_logs` (logs d'exécution), `dokploy_list_backup_files` |
-| `mcp:deploy` (suite) | `dokploy_deploy_service` (application, compose, base de données), `dokploy_start_service`, `dokploy_cancel_deployment` |
+| `mcp:read` (suite) | `dokploy_list_services` (tous types de services), `dokploy_get_service`, `dokploy_get_service_logs` (logs d'exécution), `dokploy_list_backup_files`, `dokploy_suggest_subdomain` (fournisseurs DNS, zones, sous-domaine libre ; ne crée rien) |
+| `mcp:deploy` (suite) | `dokploy_deploy_service` (application, compose, base de données), `dokploy_start_service`, `dokploy_cancel_deployment`, `dokploy_apply_fix` (applique un correctif proposé par le diagnostic ; `update_domain_port` exige aussi `mcp:config`) |
 | `mcp:config` | `dokploy_update_application_port`, `dokploy_update_domain`, `dokploy_update_healthcheck`, `dokploy_update_service_settings`, `dokploy_set_application_source` (Git, image Docker, GitHub), `dokploy_set_build_type`, `dokploy_update_compose_file`, `dokploy_create_domain`, `dokploy_delete_domain` ✋ |
 | `mcp:env` | `dokploy_get_env_vars` (secrets masqués), `dokploy_set_env_vars` (ajout/suppression sans toucher aux autres) |
 | `mcp:manage` | `dokploy_create_project`, `dokploy_create_environment`, `dokploy_create_service`, `dokploy_stop_service` ✋, `dokploy_delete_service` ✋, `dokploy_delete_environment` ✋, `dokploy_delete_project` ✋, `dokploy_run_backup`, `dokploy_restore_backup` ✋ |
@@ -75,6 +75,7 @@ Types de services : `application`, `compose`, `postgres`, `mysql`, `mariadb`, `m
 - `rollback_deployment` relance une image conservée (voir `SMART_DEPLOY_ENGINE.md`).
 - `update_healthcheck` ne prend effet qu'au prochain déploiement.
 - `set_env_vars`, `update_service_settings`, `set_application_source`, `set_build_type` et `update_compose_file` prennent effet au prochain déploiement (la réponse le rappelle).
+- `create_domain` accepte `dns` (fournisseur et zone de Settings › DNS, nom facultatif) : il crée aussi l'enregistrement A, sans jamais en écraser un, puis le domaine. `delete_domain` supprime aussi l'enregistrement créé par Dokploy (sauf `deleteDnsRecord: false`), et la confirmation le mentionne.
 - `create_service` génère les mots de passe des bases de données côté serveur ; ils restent visibles dans l'UI, jamais dans MCP.
 - `exec_command` lance `sh -c <commande>` via `docker exec`, avec un délai de 1 à 120 s, une sortie tronquée à 32 000 caractères et nettoyée par le redactor.
 

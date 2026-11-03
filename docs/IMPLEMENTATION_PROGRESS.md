@@ -113,8 +113,22 @@ Remote `upstream` = `Dokploy/dokploy`. Aucun push effectué.
 - Bugs trouvés par le e2e et corrigés : déploiement d'application absent de la liste blanche, identifiant de projet non renvoyé, choix du conteneur quand une app a plusieurs tâches.
 - Tests : 80 unitaires, `platform-e2e.mjs` 59/59, `run-all.sh` entièrement OK (dont isolation 27/27), suite complète 1677 passés (seul le timeout connu de `backup-files` échoue, 14/14 seul).
 
+### 03/11/2026 — Enregistrement DNS depuis le formulaire de domaine
+- Réutilise les fournisseurs DNS d'upstream (Settings › DNS : Cloudflare, Route 53, OVH, Infomaniak, Porkbun).
+- Formulaire « Add domain » : bloc « Create the DNS record » avec zone, sous-domaine suggéré (`service` ou `service-environnement`, suffixe si pris), statut en direct, IP du serveur, proxy Cloudflare (désactivé par défaut). Un clic crée l'enregistrement A puis le domaine ; si le domaine échoue, l'enregistrement est retiré.
+- Jamais d'écrasement : un nom déjà utilisé par un A/AAAA/CNAME est refusé, même côté serveur ; un nom pointant déjà ici est réutilisé sans être créé.
+- Table `domain_dns_record` (migration 0201, additive) : seuls les enregistrements créés par Dokploy sont suivis. La suppression du domaine propose de supprimer l'enregistrement, case cochée par défaut, seulement s'il pointe encore sur ce serveur.
+- Routeur tRPC `domainDns` (le routeur `domain` d'upstream est appelé tel quel) ; MCP : `dokploy_suggest_subdomain`, option `dns` de `dokploy_create_domain`, suppression d'enregistrement dans `dokploy_delete_domain`.
+- Le schéma `domain` d'upstream n'est pas modifié : une première version avec des colonnes cassait les fixtures de test d'upstream.
+
+### 03/11/2026 — MCP : déploiements, Smart Deploy et logs complets
+- `dokploy_get_deployments`, `dokploy_get_deployment_status` et `dokploy_get_deployment_logs` couvrent aussi les compose (contrôle d'accès au compose et à l'organisation).
+- Nouveaux outils : `dokploy_preflight`, `dokploy_get_deployment_timeline` (avant, ressource seulement), `dokploy_apply_fix` (correctif revalidé contre le diagnostic courant).
+- `dev/mcp/deployments-e2e.mjs` : 24/24. Les clients de test acceptent `DOKPLOY_DEV_URL` et `DOKPLOY_MCP_URL` en variables d'environnement.
+
 ## Décisions validées
 - Environnement local : devbox Docker-in-Docker.
 - Images taguées par déploiement (`<app>:<deploymentId>`), conservation des 5 dernières.
 - OAuth : `@better-auth/oauth-provider` greffé sur l'auth better-auth existante (mêmes comptes, login, 2FA, SSO).
+- DNS depuis le formulaire (choix utilisateur du 03/11/2026) : proposer de supprimer l'enregistrement avec le domaine ; tests réels sur une zone dédiée ; exposition au MCP.
 - MCP « tout faire » (choix utilisateur du 02/11/2026) : écriture des secrets autorisée, lecture sans les secrets ; actions destructrices avec confirmation ; commande libre avec confirmation (l'interdiction initiale du brief est levée pour `mcp:exec` uniquement).

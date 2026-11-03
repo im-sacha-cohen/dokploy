@@ -15,6 +15,7 @@ import {
 	ID,
 	json,
 	type McpActionDeps,
+	plainError,
 	type RegisterTool,
 	ToolError,
 } from "./tool-kit";
@@ -683,13 +684,85 @@ export const registerPlatformTools = ({
 		},
 	);
 
+	const dnsInput = z
+		.object({
+			dnsProviderId: ID,
+			zoneId: z.string().min(1).max(255),
+			name: z
+				.string()
+				.max(253)
+				.optional()
+				.describe(
+					"Subdomain or full name; the suggestion is used when omitted",
+				),
+			ip: z.ipv4().optional().describe("Defaults to the server's main IPv4"),
+			proxied: z.boolean().default(false).describe("Cloudflare proxy"),
+		})
+		.optional()
+		.describe(
+			"Also create the A record at a DNS provider from Settings › DNS (see dokploy_suggest_subdomain). Never overwrites an existing record.",
+		);
+
+	tool(
+		"dokploy_suggest_subdomain",
+		"mcp:read",
+		{
+			title: "Suggest subdomain",
+			description:
+				"Lists the DNS providers connected in Settings › DNS and their zones, suggests a free subdomain for a service, and checks a name you propose. Creates nothing.",
+			input: z.object({
+				serviceType: z.enum(["application", "compose"]),
+				serviceId: ID,
+				dnsProviderId: ID.optional(),
+				zoneId: z.string().min(1).max(255).optional(),
+				name: z.string().max(253).optional(),
+			}),
+		},
+		async ({ serviceType, serviceId, dnsProviderId, zoneId, name }) => {
+			const context = await api<Row & { providers: Row[] }>(
+				"domainDns.context",
+				{ serviceType, serviceId },
+			);
+			const providerId =
+				dnsProviderId ?? (context.providers[0]?.dnsProviderId as string);
+			if (!providerId) {
+				return json({
+					providers: [],
+					note: "No DNS provider is connected (Settings › DNS), or you may not read them.",
+				});
+			}
+			const zones = await api<Row[]>("dnsProvider.listZones", {
+				dnsProviderId: providerId,
+			});
+			const zone = zoneId ?? (zones[0]?.id as string | undefined);
+			const check = zone
+				? await api<Row>("domainDns.suggest", {
+						serviceType,
+						serviceId,
+						dnsProviderId: providerId,
+						zoneId: zone,
+						...(name ? { name } : {}),
+					})
+				: null;
+			return json({
+				providers: context.providers,
+				dnsProviderId: providerId,
+				zones: zones.map((z) => ({ zoneId: z.id, name: z.name })),
+				zoneId: zone,
+				serverIps: context.serverIps,
+				canCreateRecords: context.canCreateRecords,
+				...(check ?? {}),
+			});
+		},
+	);
+
 	tool(
 		"dokploy_create_domain",
 		"mcp:config",
 		{
 			title: "Create domain",
 			description:
-				"Routes a host name to an application or a service of a compose stack, through Traefik.",
+				"Routes a host name to an application or a service of a compose stack, through Traefik. With `dns`, also creates the DNS record (then `host` may be omitted).",
 			input: z.object({
 				serviceType: z.enum(["application", "compose"]),
 				serviceId: ID,
@@ -697,7 +770,8 @@ export const registerPlatformTools = ({
 					.string()
 					.min(1)
 					.max(253)
-					.regex(/^[A-Za-z0-9.-]+$/),
+					.regex(/^[A-Za-z0-9.-]+$/)
+					.optional(),
 				port: z.number().int().min(1).max(65535),
 				path: z.string().max(500).default("/"),
 				https: z.boolean().default(false),
@@ -707,26 +781,75 @@ export const registerPlatformTools = ({
 					.max(200)
 					.optional()
 					.describe("Compose service to route to (required for compose)"),
+				dns: dnsInput,
 			}),
 			mutation: true,
 		},
-		async ({ serviceType, serviceId, serviceName, ...domain }) => {
+		async ({ serviceType, serviceId, serviceName, dns, host, ...domain }) => {
 			if (serviceType === "compose" && !serviceName)
 				throw new ToolError("serviceName is required for a compose stack.");
-			const created = await api<Row>("domain.create", {
+			const target = {
 				...domain,
 				domainType: serviceType,
 				[idField(serviceType)]: serviceId,
 				...(serviceName ? { serviceName } : {}),
+			};
+			const note =
+				serviceType === "compose"
+					? "Redeploy the compose stack to apply the route."
+					: "The route is active.";
+
+			if (!dns) {
+				if (!host) throw new ToolError("host is required without `dns`.");
+				const created = await api<Row>("domain.create", { ...target, host });
+				return json({
+					domainId: created?.domainId,
+					host,
+					port: domain.port,
+					note,
+				});
+			}
+
+			let name = dns.name ?? host;
+			const context = await api<Row & { serverIps: string[] }>(
+				"domainDns.context",
+				{ serviceType, serviceId },
+			);
+			if (!name) {
+				const check = await api<{ suggestion: { fqdn: string } | null }>(
+					"domainDns.suggest",
+					{
+						serviceType,
+						serviceId,
+						dnsProviderId: dns.dnsProviderId,
+						zoneId: dns.zoneId,
+					},
+				);
+				if (!check.suggestion)
+					throw new ToolError("No free subdomain found; pass `dns.name`.");
+				name = check.suggestion.fqdn;
+			}
+			const ip = dns.ip ?? context.serverIps[0];
+			if (!ip) throw new ToolError("No IPv4 address found for this server.");
+			const result = await api<{
+				domain: Row;
+				record: { name: string; created: boolean };
+			}>("domainDns.createDomain", {
+				...target,
+				dnsProviderId: dns.dnsProviderId,
+				zoneId: dns.zoneId,
+				name,
+				ip,
+				proxied: dns.proxied,
 			});
 			return json({
-				domainId: created?.domainId,
-				host: domain.host,
+				domainId: result.domain.domainId,
+				host: result.record.name,
 				port: domain.port,
-				note:
-					serviceType === "compose"
-						? "Redeploy the compose stack to apply the route."
-						: "The route is active.",
+				dnsRecord: result.record.created
+					? `A ${result.record.name} → ${ip} created`
+					: `${result.record.name} already pointed to this server (reused)`,
+				note,
 			});
 		},
 	);
@@ -736,18 +859,41 @@ export const registerPlatformTools = ({
 		"mcp:config",
 		{
 			title: "Delete domain",
-			description: "Removes a domain route. Asks the user to confirm.",
-			input: z.object({ domainId: ID }),
+			description:
+				"Removes a domain route, and the DNS record Dokploy created for it unless deleteDnsRecord is false. Asks the user to confirm.",
+			input: z.object({
+				domainId: ID,
+				deleteDnsRecord: z.boolean().default(true),
+			}),
 			mutation: true,
 			destructive: true,
-			confirm: async ({ domainId }) => {
+			confirm: async ({ domainId, deleteDnsRecord }) => {
 				const domain = await api<Row>("domain.one", { domainId });
-				return `Delete the domain ${domain.host}? Traffic to it will stop reaching the service.`;
+				const record = await api<Row | null>("domainDns.recordForDomain", {
+					domainId,
+				});
+				const dnsPart =
+					record?.canDelete && deleteDnsRecord
+						? ` Its DNS record ${record.name} at ${record.providerName} will be deleted too.`
+						: record
+							? ` Its DNS record ${record.name} is kept.`
+							: "";
+				return `Delete the domain ${domain.host}? Traffic to it will stop reaching the service.${dnsPart}`;
 			},
 		},
-		async ({ domainId }) => {
-			await api("domain.delete", { domainId });
-			return json({ deleted: domainId });
+		async ({ domainId, deleteDnsRecord }) => {
+			const record = await api<Row | null>("domainDns.recordForDomain", {
+				domainId,
+			});
+			if (!record) {
+				await api("domain.delete", { domainId });
+				return json({ deleted: domainId });
+			}
+			const result = await api<Row>("domainDns.deleteDomain", {
+				domainId,
+				deleteRecord: !!record.canDelete && deleteDnsRecord,
+			});
+			return json({ deleted: domainId, ...result });
 		},
 	);
 
@@ -1164,6 +1310,73 @@ export const registerPlatformTools = ({
 					},
 				],
 			};
+		},
+	);
+
+	tool(
+		"dokploy_preflight",
+		"mcp:read",
+		{
+			title: "Smart Deploy preflight",
+			description:
+				"Checks an application before deploying (Smart Deploy): fetches the source, detects the build type, the port it will listen on and the environment variables it expects, and lists blocking problems. Changes nothing.",
+			input: z.object({ applicationId: ID }),
+		},
+		async ({ applicationId }) =>
+			json(await api("smartDeploy.preflight", { applicationId })),
+	);
+
+	tool(
+		"dokploy_get_deployment_timeline",
+		"mcp:read",
+		{
+			title: "Deployment timeline",
+			description:
+				"Smart Deploy timeline of an application deployment: each recorded step (fetch, build, container, health, reachability) with its duration and the verification findings.",
+			input: z.object({ deploymentId: ID }),
+		},
+		async ({ deploymentId }) => {
+			const timeline = await api<Row>("smartDeploy.getDeploymentTimeline", {
+				deploymentId,
+			});
+			const { logPath: _logPath, ...rest } = timeline;
+			return json(rest);
+		},
+	);
+
+	tool(
+		"dokploy_apply_fix",
+		"mcp:deploy",
+		{
+			title: "Apply a Smart Deploy fix",
+			description:
+				"Applies a fix proposed by dokploy_diagnose_deployment (finding.recommendedFix.action, only when autoFixable): update_domain_port (also needs mcp:config), deploy_latest or redeploy_deployment. The server re-checks that the diagnosis still proposes it.",
+			input: z.object({
+				applicationId: ID,
+				action: z.discriminatedUnion("kind", [
+					z.object({
+						kind: z.literal("update_domain_port"),
+						domainId: ID,
+						host: z.string().min(1).max(253),
+						port: z.number().int().min(1).max(65535),
+					}),
+					z.object({ kind: z.literal("deploy_latest") }),
+					z.object({
+						kind: z.literal("redeploy_deployment"),
+						deploymentId: ID,
+					}),
+				]),
+			}),
+			mutation: true,
+		},
+		async ({ applicationId, action }) => {
+			if (
+				action.kind === "update_domain_port" &&
+				!principal.scopes.includes("mcp:config")
+			) {
+				return plainError("Insufficient scope: mcp:config is required.");
+			}
+			return json(await api("smartDeploy.applyFix", { applicationId, action }));
 		},
 	);
 

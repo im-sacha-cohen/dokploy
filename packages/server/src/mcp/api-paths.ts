@@ -84,6 +84,12 @@ export const MCP_API_PATHS = [
 	"domain.create",
 	"domain.one",
 	"domain.delete",
+	"domainDns.context",
+	"domainDns.suggest",
+	"domainDns.createDomain",
+	"domainDns.recordForDomain",
+	"domainDns.deleteDomain",
+	"dnsProvider.listZones",
 	"backup.one",
 	"backup.manualBackupPostgres",
 	"backup.manualBackupMySql",
@@ -93,6 +99,9 @@ export const MCP_API_PATHS = [
 	"backup.listBackupFilesByBackupId",
 	"backup.restoreBackupWithLogs",
 	"docker.getContainersByAppNameMatch",
+	"smartDeploy.preflight",
+	"smartDeploy.getDeploymentTimeline",
+	"smartDeploy.applyFix",
 ] as const;
 
 export type McpApiPath = (typeof MCP_API_PATHS)[number];

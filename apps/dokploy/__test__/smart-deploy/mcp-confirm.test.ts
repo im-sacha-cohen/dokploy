@@ -4,8 +4,9 @@ import {
 	requireConfirmation,
 	verifyConfirmationState,
 } from "@dokploy/server/mcp/confirm";
-import type { ServerContext } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+
+type ServerContext = Parameters<typeof requireConfirmation>[0];
 
 const principal = {
 	userId: "user-1",
@@ -13,7 +14,7 @@ const principal = {
 	clientId: "client-1",
 	clientName: "Test client",
 	grantId: "grant-1",
-	scopes: ["mcp:exec"],
+	scopes: ["mcp:exec" as const],
 };
 
 const MODERN_ENVELOPE = {

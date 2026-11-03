@@ -64,6 +64,7 @@ import { api } from "@/utils/api";
 import { DomainReachabilityBadge } from "../smart-deploy/domain-port-hint";
 import { NetworkChain } from "../smart-deploy/network-chain";
 import { createColumns } from "./columns";
+import { DeleteDomainWithDns } from "./delete-domain-with-dns";
 import { DnsHelperModal } from "./dns-helper-modal";
 import { AddDomain } from "./handle-domain";
 import { HandleForwardAuth } from "./handle-forward-auth";
@@ -151,6 +152,10 @@ export const ShowDomains = ({ id, type }: Props) => {
 		api.domain.validateDomain.useMutation();
 	const { mutateAsync: deleteDomain, isPending: isRemoving } =
 		api.domain.delete.useMutation();
+	const { data: trackedDomainIds } = api.domainDns.trackedDomains.useQuery({
+		serviceType: type,
+		serviceId: id,
+	});
 	const { mutateAsync: toggleEnable, isPending: isToggling } =
 		api.domain.toggleEnable.useMutation();
 
@@ -499,25 +504,42 @@ export const ShowDomains = ({ id, type }: Props) => {
 																applicationId={id}
 															/>
 														)}
-														{canDeleteDomain && (
-															<DialogAction
-																title="Delete Domain"
-																description="Are you sure you want to delete this domain?"
-																type="destructive"
-																onClick={async () => {
-																	await handleDeleteDomain(item.domainId);
-																}}
-															>
-																<Button
-																	variant="ghost"
-																	size="icon"
-																	className="group hover:bg-red-500/10"
-																	isLoading={isRemoving}
+														{canDeleteDomain &&
+															trackedDomainIds?.includes(item.domainId) && (
+																<DeleteDomainWithDns
+																	domainId={item.domainId}
+																	host={item.host}
+																	onDeleted={() => refetch()}
 																>
-																	<Trash2 className="size-4 text-primary group-hover:text-red-500" />
-																</Button>
-															</DialogAction>
-														)}
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		className="group hover:bg-red-500/10"
+																	>
+																		<Trash2 className="size-4 text-primary group-hover:text-red-500" />
+																	</Button>
+																</DeleteDomainWithDns>
+															)}
+														{canDeleteDomain &&
+															!trackedDomainIds?.includes(item.domainId) && (
+																<DialogAction
+																	title="Delete Domain"
+																	description="Are you sure you want to delete this domain?"
+																	type="destructive"
+																	onClick={async () => {
+																		await handleDeleteDomain(item.domainId);
+																	}}
+																>
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		className="group hover:bg-red-500/10"
+																		isLoading={isRemoving}
+																	>
+																		<Trash2 className="size-4 text-primary group-hover:text-red-500" />
+																	</Button>
+																</DialogAction>
+															)}
 													</div>
 												</div>
 												<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

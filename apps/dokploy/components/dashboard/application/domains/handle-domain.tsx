@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from "@/utils/api";
 import { DomainPortHint } from "../smart-deploy/domain-port-hint";
+import { type DnsRecordChoice, DnsRecordSection } from "./dns-record-section";
 import { COMPOSE_REDEPLOY_TOAST, ComposeRedeployAlert } from "./redeploy-hint";
 
 export type CacheType = "fetch" | "cache";
@@ -184,6 +185,10 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 		? api.domain.update.useMutation()
 		: api.domain.create.useMutation();
 
+	const createWithDns = api.domainDns.createDomain.useMutation();
+	const [dnsRecord, setDnsRecord] = useState<DnsRecordChoice | null>(null);
+	const withDnsRecord = !domainId && !!dnsRecord;
+
 	const { mutateAsync: generateDomain, isPending: isLoadingGenerate } =
 		api.domain.generateDomain.useMutation();
 
@@ -294,8 +299,14 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 			: "In this section you can add domains",
 	};
 
+	useEffect(() => {
+		if (withDnsRecord && dnsRecord) {
+			form.setValue("host", dnsRecord.name, { shouldValidate: true });
+		}
+	}, [withDnsRecord, dnsRecord, form]);
+
 	const onSubmit = async (data: Domain) => {
-		await mutateAsync({
+		const payload = {
 			domainId,
 			...(data.domainType === "application" && {
 				applicationId: id,
@@ -305,7 +316,30 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 			}),
 			...data,
 			customEntrypoint: data.useCustomEntrypoint ? data.customEntrypoint : null,
-		})
+		};
+		if (withDnsRecord && dnsRecord && !dnsRecord.ready) {
+			toast.error("Choose an available subdomain first");
+			return;
+		}
+		await (withDnsRecord && dnsRecord
+			? createWithDns
+					.mutateAsync({
+						...payload,
+						dnsProviderId: dnsRecord.dnsProviderId,
+						zoneId: dnsRecord.zoneId,
+						name: dnsRecord.name,
+						ip: dnsRecord.ip,
+						proxied: dnsRecord.proxied,
+					})
+					.then((result) => {
+						toast.success(
+							result.record.created
+								? `DNS record ${result.record.name} created`
+								: `${result.record.name} already pointed to this server`,
+						);
+					})
+			: mutateAsync(payload)
+		)
 			.then(async () => {
 				toast.success(
 					dictionary.success,
@@ -348,6 +382,9 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 					<DialogDescription>{dictionary.dialogDescription}</DialogDescription>
 				</DialogHeader>
 				{isError && <AlertBlock type="error">{error?.message}</AlertBlock>}
+				{createWithDns.isError && (
+					<AlertBlock type="error">{createWithDns.error?.message}</AlertBlock>
+				)}
 
 				{type === "compose" && <ComposeRedeployAlert className="mb-4" />}
 
@@ -518,6 +555,13 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 										</div>
 									)}
 								</div>
+								{!domainId && (
+									<DnsRecordSection
+										serviceType={type}
+										serviceId={id}
+										onChange={setDnsRecord}
+									/>
+								)}
 								<FormField
 									control={form.control}
 									name="host"
@@ -548,40 +592,46 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 											<FormLabel>Host</FormLabel>
 											<div className="flex gap-2">
 												<FormControl>
-													<Input placeholder="api.dokploy.com" {...field} />
+													<Input
+														placeholder="api.dokploy.com"
+														{...field}
+														readOnly={withDnsRecord}
+													/>
 												</FormControl>
-												<TooltipProvider delayDuration={0}>
-													<Tooltip>
-														<TooltipTrigger asChild>
-															<Button
-																variant="secondary"
-																type="button"
-																isLoading={isLoadingGenerate}
-																onClick={() => {
-																	generateDomain({
-																		appName: application?.appName || "",
-																		serverId: application?.serverId || "",
-																	})
-																		.then((domain) => {
-																			field.onChange(domain);
+												{!withDnsRecord && (
+													<TooltipProvider delayDuration={0}>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<Button
+																	variant="secondary"
+																	type="button"
+																	isLoading={isLoadingGenerate}
+																	onClick={() => {
+																		generateDomain({
+																			appName: application?.appName || "",
+																			serverId: application?.serverId || "",
 																		})
-																		.catch((err) => {
-																			toast.error(err.message);
-																		});
-																}}
+																			.then((domain) => {
+																				field.onChange(domain);
+																			})
+																			.catch((err) => {
+																				toast.error(err.message);
+																			});
+																	}}
+																>
+																	<Dices className="size-4 text-muted-foreground" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent
+																side="left"
+																sideOffset={5}
+																className="max-w-40"
 															>
-																<Dices className="size-4 text-muted-foreground" />
-															</Button>
-														</TooltipTrigger>
-														<TooltipContent
-															side="left"
-															sideOffset={5}
-															className="max-w-40"
-														>
-															<p>Generate sslip.io domain</p>
-														</TooltipContent>
-													</Tooltip>
-												</TooltipProvider>
+																<p>Generate sslip.io domain</p>
+															</TooltipContent>
+														</Tooltip>
+													</TooltipProvider>
+												)}
 											</div>
 
 											<FormMessage />
@@ -944,7 +994,11 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 					</form>
 
 					<DialogFooter>
-						<Button isLoading={isPending} form="hook-form" type="submit">
+						<Button
+							isLoading={isPending || createWithDns.isPending}
+							form="hook-form"
+							type="submit"
+						>
 							{dictionary.submit}
 						</Button>
 					</DialogFooter>

@@ -15,6 +15,7 @@ import { dockerDiskUsageRouter } from "./routers/docker-disk-usage";
 import { dockerImageRouter } from "./routers/docker-image";
 import { dockerVolumeRouter } from "./routers/docker-volume";
 import { domainRouter } from "./routers/domain";
+import { domainDnsRouter } from "./routers/domain-dns";
 import { environmentRouter } from "./routers/environment";
 import { gitProviderRouter } from "./routers/git-provider";
 import { giteaRouter } from "./routers/gitea";
@@ -22,6 +23,7 @@ import { githubRouter } from "./routers/github";
 import { gitlabRouter } from "./routers/gitlab";
 import { libsqlRouter } from "./routers/libsql";
 import { mariadbRouter } from "./routers/mariadb";
+import { mcpRouter } from "./routers/mcp";
 import { mongoRouter } from "./routers/mongo";
 import { mountRouter } from "./routers/mount";
 import { mysqlRouter } from "./routers/mysql";
@@ -49,7 +51,6 @@ import { scheduleRouter } from "./routers/schedule";
 import { securityRouter } from "./routers/security";
 import { serverRouter } from "./routers/server";
 import { settingsRouter } from "./routers/settings";
-import { mcpRouter } from "./routers/mcp";
 import { smartDeployRouter } from "./routers/smart-deploy";
 import { sshRouter } from "./routers/ssh-key";
 import { stripeRouter } from "./routers/stripe";
@@ -127,6 +128,7 @@ export const appRouter = createTRPCRouter({
 	overview: overviewRouter,
 	transfer: transferRouter,
 	smartDeploy: smartDeployRouter,
+	domainDns: domainDnsRouter,
 	mcp: mcpRouter,
 });
 

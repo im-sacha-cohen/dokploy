@@ -10,6 +10,7 @@ export * from "./deployment";
 export * from "./destination";
 export * from "./dns-provider";
 export * from "./domain";
+export * from "./domain-dns-record";
 export * from "./environment";
 export * from "./forward-auth";
 export * from "./git-provider";

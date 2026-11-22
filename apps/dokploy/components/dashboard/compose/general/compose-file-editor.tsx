@@ -1,4 +1,5 @@
 import { standardSchemaResolver as zodResolver } from "@hookform/resolvers/standard-schema";
+import { AlignLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -13,6 +14,7 @@ import {
 	FormMessage,
 } from "@/components/ui/form";
 import { api } from "@/utils/api";
+import { formatYaml } from "@/utils/format-yaml";
 import { validateAndFormatYAML } from "../../application/advanced/traefik/update-traefik-config";
 
 interface Props {
@@ -92,12 +94,43 @@ export const ComposeFileEditor = ({ composeId }: Props) => {
 			});
 	};
 
-	// Add keyboard shortcut for Ctrl+S/Cmd+S
+	const formatComposeFile = () => {
+		const result = formatYaml(form.getValues("composeFile"));
+		if (!result.ok) {
+			const where = result.line ? `Line ${result.line}: ` : "";
+			form.setError("composeFile", {
+				type: "manual",
+				message: `${where}${result.error}`,
+			});
+			toast.error("Cannot format: the YAML is invalid", {
+				description: `${where}${result.error}`,
+			});
+			return;
+		}
+		form.clearErrors("composeFile");
+		if (result.changed) {
+			form.setValue("composeFile", result.formatted, { shouldDirty: true });
+		}
+		if (result.warnings.length > 0) {
+			toast.warning(
+				result.changed ? "Formatted, but check this" : "Check this",
+				{ description: result.warnings.join("\n") },
+			);
+		} else {
+			toast.success(result.changed ? "Formatted" : "Already formatted");
+		}
+	};
+
+	// Ctrl/Cmd+S saves, Shift+Alt+F formats (same shortcut as VS Code).
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if ((e.ctrlKey || e.metaKey) && e.code === "KeyS" && !isPending) {
 				e.preventDefault();
 				form.handleSubmit(onSubmit)();
+			}
+			if (e.shiftKey && e.altKey && e.code === "KeyF" && canUpdate) {
+				e.preventDefault();
+				formatComposeFile();
 			}
 		};
 
@@ -105,7 +138,7 @@ export const ComposeFileEditor = ({ composeId }: Props) => {
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown);
 		};
-	}, [form, onSubmit, isPending]);
+	}, [form, onSubmit, isPending, canUpdate, formatComposeFile]);
 
 	return (
 		<>
@@ -142,14 +175,12 @@ export const ComposeFileEditor = ({ composeId }: Props) => {
 												value={field.value}
 												className="font-mono"
 												wrapperClassName="compose-file-editor"
-												placeholder={`version: '3'
-services:
-    web:
+												placeholder={`services:
+  web:
     image: nginx
     ports:
-        - "80:80"
-    
-    `}
+      - "80:80"
+`}
 												onChange={(value) => {
 													field.onChange(value);
 												}}
@@ -167,14 +198,26 @@ services:
 				<div className="flex justify-between flex-col lg:flex-row gap-2">
 					<div className="w-full flex flex-col lg:flex-row gap-4 items-end" />
 					{canUpdate && (
-						<Button
-							type="submit"
-							form="hook-form-save-compose-file"
-							isLoading={isPending}
-							className="lg:w-fit w-full"
-						>
-							Save
-						</Button>
+						<div className="flex flex-col lg:flex-row gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								onClick={formatComposeFile}
+								className="lg:w-fit w-full"
+								title="Re-indent with 2 spaces, comments kept (Shift+Alt+F)"
+							>
+								<AlignLeft className="size-4" />
+								Format
+							</Button>
+							<Button
+								type="submit"
+								form="hook-form-save-compose-file"
+								isLoading={isPending}
+								className="lg:w-fit w-full"
+							>
+								Save
+							</Button>
+						</div>
 					)}
 				</div>
 			</div>

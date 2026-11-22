@@ -244,6 +244,23 @@ Environment failures, unrelated to the code:
 
 **Not tested for real:** reading an actual metrics history. It needs the monitoring agent enabled (Settings › Monitoring), which the local devbox does not run.
 
+## Compose editor Format button (2026-11-22)
+
+- Unit tests `apps/dokploy/__test__/compose/format-yaml.test.ts`: **11/11**
+  (re-indent to 2 spaces, comments, quotes, anchors and merge keys kept, flow
+  lists, block scalars, tab width guessed when tabs and spaces are mixed, tabs
+  inside block scalars untouched, idempotent, syntax error with its line,
+  warning on a service whose lines are not nested under it, multi-document).
+- Same meaning, checked by Docker: `docker compose config` (Compose v5.6.1) on
+  the messy fixture and on its formatted version gives identical output.
+- Real deploy, `dev/demo-apps/compose-format-e2e.mjs`: **8/8**. The messy
+  fixture is formatted as the UI does it, saved, deployed by Dokploy; both
+  services run, the healthcheck passes, the anchor label reaches both services,
+  the block-scalar command serves its page, a quoted value with `: ` and `#`
+  is intact, Smart Deploy says healthy; the service is then deleted.
+- Browser: Format button and Shift+Alt+F tried on the demo compose (not saved).
+- Lint (biome) and typecheck (`tsc --noEmit`) of the app: pass.
+
 ## Reference manual tests (demo applications)
 
 See `docs/LOCAL_DEVELOPMENT.md` › *Test account and demo applications*: with the upstream engine, 7 deployments are `done`, 4 of them applications returning 502.

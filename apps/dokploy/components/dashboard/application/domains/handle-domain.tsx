@@ -1,9 +1,18 @@
+import { suggestedDomainPort } from "@dokploy/server/smart-deploy/diagnostics/presentation";
+import type { DiagnosticReport } from "@dokploy/server/smart-deploy/diagnostics/types";
 import {
 	INVALID_HOSTNAME_MESSAGE,
 	VALID_HOSTNAME_REGEX,
 } from "@dokploy/server/utils/hostname-validation";
 import { standardSchemaResolver as zodResolver } from "@hookform/resolvers/standard-schema";
-import { DatabaseZap, Dices, RefreshCw, X } from "lucide-react";
+import {
+	ChevronRight,
+	DatabaseZap,
+	Dices,
+	Lock,
+	RefreshCw,
+	X,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -12,6 +21,11 @@ import z from "zod";
 import { AlertBlock } from "@/components/shared/alert-block";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
 	Dialog,
 	DialogContent,
@@ -45,9 +59,15 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { api } from "@/utils/api";
 import { DomainPortHint } from "../smart-deploy/domain-port-hint";
-import { type DnsRecordChoice, DnsRecordSection } from "./dns-record-section";
+import { useDiagnosis } from "../smart-deploy/use-diagnosis";
+import {
+	type DnsRecordChoice,
+	DnsRecordSection,
+	describeDnsChoice,
+} from "./dns-record-section";
 import { COMPOSE_REDEPLOY_TOAST, ComposeRedeployAlert } from "./redeploy-hint";
 
 export type CacheType = "fetch" | "cache";
@@ -188,6 +208,25 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 	const createWithDns = api.domainDns.createDomain.useMutation();
 	const [dnsRecord, setDnsRecord] = useState<DnsRecordChoice | null>(null);
 	const withDnsRecord = !domainId && !!dnsRecord;
+	// An existing domain routed by Dokploy through a tunnel keeps HTTPS off:
+	// Traefik redirecting to HTTPS would loop behind the tunnel.
+	const { data: trackedRecord } = api.domainDns.recordForDomain.useQuery(
+		{ domainId },
+		{ enabled: isOpen && !!domainId },
+	);
+	const viaTunnel = domainId
+		? !!trackedRecord?.viaTunnel
+		: withDnsRecord && dnsRecord?.target === "tunnel";
+	const [advancedOpen, setAdvancedOpen] = useState(false);
+
+	// A new domain starts on the port the app was measured listening on.
+	const { data: diagnosis } = useDiagnosis(
+		id,
+		isOpen && type === "application" && !domainId && !!id,
+	);
+	const detectedPort = diagnosis
+		? suggestedDomainPort(diagnosis as DiagnosticReport)
+		: null;
 
 	const { mutateAsync: generateDomain, isPending: isLoadingGenerate } =
 		api.domain.generateDomain.useMutation();
@@ -283,6 +322,26 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 		}
 	}, [form, data, isPending, domainId]);
 
+	useEffect(() => {
+		if (!domainId && detectedPort && form.getValues("port") === undefined) {
+			form.setValue("port", detectedPort);
+		}
+	}, [domainId, detectedPort, form]);
+
+	// Each time the dialog opens, show the advanced options only for a domain
+	// that uses them.
+	useEffect(() => {
+		if (!isOpen) return;
+		setAdvancedOpen(
+			!!data &&
+				((!!data.path && data.path !== "/") ||
+					(!!data.internalPath && data.internalPath !== "/") ||
+					!!data.stripPath ||
+					!!data.customEntrypoint ||
+					(data.middlewares?.length ?? 0) > 0),
+		);
+	}, [isOpen, data]);
+
 	// Separate effect for handling custom cert resolver validation
 	useEffect(() => {
 		if (certificateType === "custom") {
@@ -291,9 +350,9 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 	}, [certificateType, form]);
 
 	const dictionary = {
-		success: domainId ? "Domain Updated" : "Domain Created",
+		success: domainId ? "Domain updated" : "Domain created",
 		error: domainId ? "Error updating the domain" : "Error creating the domain",
-		submit: domainId ? "Update" : "Create",
+		submit: domainId ? "Update domain" : "Create domain",
 		dialogDescription: domainId
 			? "In this section you can edit a domain"
 			: "In this section you can add domains",
@@ -302,7 +361,7 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 	useEffect(() => {
 		if (withDnsRecord && dnsRecord) {
 			form.setValue("host", dnsRecord.name, { shouldValidate: true });
-			if (dnsRecord.target === "tunnel" && form.getValues("https")) {
+			if (dnsRecord.target === "tunnel") {
 				form.setValue("https", false);
 				form.setValue("certificateType", "none");
 			}
@@ -378,6 +437,77 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 				toast.error(dictionary.error);
 			});
 	};
+	const hostField = (
+		<FormField
+			control={form.control}
+			name="host"
+			render={({ field }) => (
+				<FormItem>
+					{!canGenerateTraefikMeDomains && field.value.includes("sslip.io") && (
+						<AlertBlock type="warning">
+							You need to set an IP address in your{" "}
+							<Link href="/dashboard/settings/server" className="text-primary">
+								{application?.serverId
+									? "Remote Servers -> Server -> Edit Server -> Update IP Address"
+									: "Web Server -> Server -> Update Server IP"}
+							</Link>{" "}
+							to make your sslip.io domain work.
+						</AlertBlock>
+					)}
+					{isTraefikMeDomain && (
+						<AlertBlock type="info">
+							<strong>Note:</strong> sslip.io is a public HTTP service and does
+							not support SSL/HTTPS. HTTPS and certificate options will not have
+							any effect.
+						</AlertBlock>
+					)}
+					<FormLabel>Host</FormLabel>
+					<div className="flex gap-2">
+						<FormControl>
+							<Input placeholder="api.dokploy.com" {...field} />
+						</FormControl>
+						{
+							<TooltipProvider delayDuration={0}>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											variant="secondary"
+											type="button"
+											isLoading={isLoadingGenerate}
+											onClick={() => {
+												generateDomain({
+													appName: application?.appName || "",
+													serverId: application?.serverId || "",
+												})
+													.then((domain) => {
+														field.onChange(domain);
+													})
+													.catch((err) => {
+														toast.error(err.message);
+													});
+											}}
+										>
+											<Dices className="size-4 text-muted-foreground" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent
+										side="left"
+										sideOffset={5}
+										className="max-w-40"
+									>
+										<p>Generate sslip.io domain</p>
+									</TooltipContent>
+								</Tooltip>
+							</TooltipProvider>
+						}
+					</div>
+
+					<FormMessage />
+				</FormItem>
+			)}
+		/>
+	);
+
 	return (
 		<Dialog open={isOpen} onOpenChange={setIsOpen}>
 			<DialogTrigger className="" asChild>
@@ -385,7 +515,7 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 			</DialogTrigger>
 			<DialogContent className="sm:max-w-2xl">
 				<DialogHeader>
-					<DialogTitle>Domain</DialogTitle>
+					<DialogTitle>{domainId ? "Edit domain" : "Add domain"}</DialogTitle>
 					<DialogDescription>{dictionary.dialogDescription}</DialogDescription>
 				</DialogHeader>
 				{isError && <AlertBlock type="error">{error?.message}</AlertBlock>}
@@ -398,7 +528,19 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 				<Form {...form}>
 					<form
 						id="hook-form"
-						onSubmit={form.handleSubmit(onSubmit)}
+						onSubmit={form.handleSubmit(onSubmit, (errors) => {
+							// A hidden field must not block the submit silently.
+							const advanced = [
+								"path",
+								"internalPath",
+								"stripPath",
+								"customEntrypoint",
+								"middlewares",
+							];
+							if (Object.keys(errors).some((key) => advanced.includes(key))) {
+								setAdvancedOpen(true);
+							}
+						})}
 						className="grid w-full gap-8 "
 					>
 						<div className="flex flex-col gap-4">
@@ -562,251 +704,84 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 										</div>
 									)}
 								</div>
-								{!domainId && (
+								{domainId ? (
+									hostField
+								) : (
 									<DnsRecordSection
 										serviceType={type}
 										serviceId={id}
 										onChange={setDnsRecord}
+										manualAddress={hostField}
 									/>
 								)}
-								<FormField
-									control={form.control}
-									name="host"
-									render={({ field }) => (
-										<FormItem>
-											{!canGenerateTraefikMeDomains &&
-												field.value.includes("sslip.io") && (
-													<AlertBlock type="warning">
-														You need to set an IP address in your{" "}
-														<Link
-															href="/dashboard/settings/server"
-															className="text-primary"
-														>
-															{application?.serverId
-																? "Remote Servers -> Server -> Edit Server -> Update IP Address"
-																: "Web Server -> Server -> Update Server IP"}
-														</Link>{" "}
-														to make your sslip.io domain work.
-													</AlertBlock>
-												)}
-											{isTraefikMeDomain && (
-												<AlertBlock type="info">
-													<strong>Note:</strong> sslip.io is a public HTTP
-													service and does not support SSL/HTTPS. HTTPS and
-													certificate options will not have any effect.
-												</AlertBlock>
-											)}
-											<FormLabel>Host</FormLabel>
-											<div className="flex gap-2">
-												<FormControl>
-													<Input
-														placeholder="api.dokploy.com"
-														{...field}
-														readOnly={withDnsRecord}
-													/>
-												</FormControl>
-												{!withDnsRecord && (
-													<TooltipProvider delayDuration={0}>
-														<Tooltip>
-															<TooltipTrigger asChild>
-																<Button
-																	variant="secondary"
-																	type="button"
-																	isLoading={isLoadingGenerate}
-																	onClick={() => {
-																		generateDomain({
-																			appName: application?.appName || "",
-																			serverId: application?.serverId || "",
-																		})
-																			.then((domain) => {
-																				field.onChange(domain);
-																			})
-																			.catch((err) => {
-																				toast.error(err.message);
-																			});
-																	}}
-																>
-																	<Dices className="size-4 text-muted-foreground" />
-																</Button>
-															</TooltipTrigger>
-															<TooltipContent
-																side="left"
-																sideOffset={5}
-																className="max-w-40"
-															>
-																<p>Generate sslip.io domain</p>
-															</TooltipContent>
-														</Tooltip>
-													</TooltipProvider>
-												)}
-											</div>
 
-											<FormMessage />
-										</FormItem>
-									)}
-								/>
-
-								<FormField
-									control={form.control}
-									name="path"
-									render={({ field }) => {
-										return (
-											<FormItem>
-												<FormLabel>Path</FormLabel>
-												<FormControl>
-													<Input placeholder={"/"} {...field} />
-												</FormControl>
-												<FormMessage />
-											</FormItem>
-										);
-									}}
-								/>
-
-								<FormField
-									control={form.control}
-									name="internalPath"
-									render={({ field }) => {
-										return (
-											<FormItem>
-												<FormLabel>Internal Path</FormLabel>
-												<FormDescription>
-													The path where your application expects to receive
-													requests internally (defaults to "/")
-												</FormDescription>
-												<FormControl>
-													<Input placeholder={"/"} {...field} />
-												</FormControl>
-												<FormMessage />
-											</FormItem>
-										);
-									}}
-								/>
-
-								<FormField
-									control={form.control}
-									name="stripPath"
-									render={({ field }) => (
-										<FormItem className="flex flex-row items-center justify-between p-3 border rounded-lg shadow-xs">
-											<div className="space-y-0.5">
-												<FormLabel>Strip Path</FormLabel>
-												<FormDescription>
-													Remove the external path from the request before
-													forwarding to the application
-												</FormDescription>
-												<FormMessage />
-											</div>
-											<FormControl>
-												<Switch
-													checked={field.value}
-													onCheckedChange={field.onChange}
-												/>
-											</FormControl>
-										</FormItem>
-									)}
-								/>
-
-								<FormField
-									control={form.control}
-									name="port"
-									render={({ field }) => {
-										return (
-											<FormItem>
-												<FormLabel>Container Port</FormLabel>
-												<FormDescription>
-													The port where your application is running inside the
-													container (e.g., 3000 for Node.js, 80 for Nginx, 8080
-													for Java)
-												</FormDescription>
-												<FormControl>
-													<NumberInput placeholder={"3000"} {...field} />
-												</FormControl>
-												{type === "application" && id && (
-													<DomainPortHint
-														applicationId={id}
-														value={field.value ?? undefined}
-														onUse={(port) =>
-															form.setValue("port", port, { shouldDirty: true })
-														}
-													/>
-												)}
-												<FormMessage />
-											</FormItem>
-										);
-									}}
-								/>
-
-								<FormField
-									control={form.control}
-									name="useCustomEntrypoint"
-									render={({ field }) => (
-										<FormItem className="flex flex-row items-center justify-between p-3 mt-4 border rounded-lg shadow-xs">
-											<div className="space-y-0.5">
-												<FormLabel>Custom Entrypoint</FormLabel>
-												<FormDescription>
-													Use custom entrypoint for domain
-													<br />
-													"web" and/or "websecure" is used by default.
-												</FormDescription>
-												<FormMessage />
-											</div>
-											<FormControl>
-												<Switch
-													checked={field.value}
-													onCheckedChange={(checked) => {
-														field.onChange(checked);
-														if (!checked) {
-															form.setValue("customEntrypoint", undefined);
-														}
-													}}
-												/>
-											</FormControl>
-										</FormItem>
-									)}
-								/>
-
-								{useCustomEntrypoint && (
+								<div className="flex flex-col gap-4">
 									<FormField
 										control={form.control}
-										name="customEntrypoint"
-										render={({ field }) => (
-											<FormItem className="w-full">
-												<FormLabel>Entrypoint Name</FormLabel>
-												<FormControl>
-													<Input
-														placeholder="Enter entrypoint name manually"
-														{...field}
-														className="w-full"
-													/>
-												</FormControl>
-												<FormMessage />
-											</FormItem>
-										)}
+										name="port"
+										render={({ field }) => {
+											return (
+												<FormItem>
+													<FormLabel>Container port</FormLabel>
+													<FormControl>
+														<NumberInput placeholder={"3000"} {...field} />
+													</FormControl>
+													{type === "application" && id && (
+														<DomainPortHint
+															applicationId={id}
+															value={field.value ?? undefined}
+															onUse={(port) =>
+																form.setValue("port", port, {
+																	shouldDirty: true,
+																})
+															}
+														/>
+													)}
+													<FormMessage />
+												</FormItem>
+											);
+										}}
 									/>
-								)}
 
-								<FormField
-									control={form.control}
-									name="https"
-									render={({ field }) => (
-										<FormItem className="flex flex-row items-center justify-between p-3 mt-4 border rounded-lg shadow-xs">
+									{viaTunnel ? (
+										<div className="flex items-center gap-3 rounded-lg border p-3 shadow-xs">
+											<Lock className="size-4 shrink-0 text-muted-foreground" />
 											<div className="space-y-0.5">
-												<FormLabel>HTTPS</FormLabel>
-												<FormDescription>
-													Automatically provision SSL Certificate.
-												</FormDescription>
-												<FormMessage />
+												<p className="text-sm font-medium">
+													HTTPS handled by Cloudflare
+												</p>
+												<p className="text-sm text-muted-foreground">
+													Traefik serves this domain over HTTP, without its own
+													certificate.
+												</p>
 											</div>
-											<FormControl>
-												<Switch
-													checked={field.value}
-													onCheckedChange={field.onChange}
-												/>
-											</FormControl>
-										</FormItem>
+										</div>
+									) : (
+										<FormField
+											control={form.control}
+											name="https"
+											render={({ field }) => (
+												<FormItem className="flex flex-row items-center justify-between p-3 border rounded-lg shadow-xs">
+													<div className="space-y-0.5">
+														<FormLabel>HTTPS</FormLabel>
+														<FormDescription>
+															Automatically provision SSL Certificate.
+														</FormDescription>
+														<FormMessage />
+													</div>
+													<FormControl>
+														<Switch
+															checked={field.value}
+															onCheckedChange={field.onChange}
+														/>
+													</FormControl>
+												</FormItem>
+											)}
+										/>
 									)}
-								/>
+								</div>
 
-								{https && (
+								{https && !viaTunnel && (
 									<>
 										<FormField
 											control={form.control}
@@ -914,93 +889,236 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 										)}
 									</>
 								)}
-								<FormField
-									control={form.control}
-									name="middlewares"
-									render={({ field }) => (
-										<FormItem>
-											<div className="flex items-center gap-2">
-												<FormLabel>Middlewares</FormLabel>
-												<TooltipProvider>
-													<Tooltip>
-														<TooltipTrigger type="button">
-															<div className="size-4 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold">
-																?
-															</div>
-														</TooltipTrigger>
-														<TooltipContent className="max-w-[300px]">
-															<p>
-																Add Traefik middleware references. Middlewares
-																must be defined in your Traefik configuration.
-															</p>
-														</TooltipContent>
-													</Tooltip>
-												</TooltipProvider>
-											</div>
-											<div className="flex flex-wrap gap-2 mb-2">
-												{field.value?.map((name, index) => (
-													<Badge key={index} variant="secondary">
-														{name}
-														<X
-															className="ml-1 size-3 cursor-pointer"
-															onClick={() => {
-																const newMiddlewares = [...(field.value || [])];
-																newMiddlewares.splice(index, 1);
-																form.setValue("middlewares", newMiddlewares);
+
+								<Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+									<CollapsibleTrigger asChild>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											className="-ml-2 text-muted-foreground"
+										>
+											<ChevronRight
+												className={cn(
+													"size-4 transition-transform",
+													advancedOpen && "rotate-90",
+												)}
+											/>
+											Advanced: path, entrypoint, middlewares
+										</Button>
+									</CollapsibleTrigger>
+									<CollapsibleContent className="flex flex-col gap-4 pt-2">
+										<FormField
+											control={form.control}
+											name="path"
+											render={({ field }) => {
+												return (
+													<FormItem>
+														<FormLabel>Path</FormLabel>
+														<FormControl>
+															<Input placeholder={"/"} {...field} />
+														</FormControl>
+														<FormMessage />
+													</FormItem>
+												);
+											}}
+										/>
+
+										<FormField
+											control={form.control}
+											name="internalPath"
+											render={({ field }) => {
+												return (
+													<FormItem>
+														<FormLabel>Internal Path</FormLabel>
+														<FormDescription>
+															The path where your application expects to receive
+															requests internally (defaults to "/")
+														</FormDescription>
+														<FormControl>
+															<Input placeholder={"/"} {...field} />
+														</FormControl>
+														<FormMessage />
+													</FormItem>
+												);
+											}}
+										/>
+
+										<FormField
+											control={form.control}
+											name="stripPath"
+											render={({ field }) => (
+												<FormItem className="flex flex-row items-center justify-between p-3 border rounded-lg shadow-xs">
+													<div className="space-y-0.5">
+														<FormLabel>Strip Path</FormLabel>
+														<FormDescription>
+															Remove the external path from the request before
+															forwarding to the application
+														</FormDescription>
+														<FormMessage />
+													</div>
+													<FormControl>
+														<Switch
+															checked={field.value}
+															onCheckedChange={field.onChange}
+														/>
+													</FormControl>
+												</FormItem>
+											)}
+										/>
+
+										<FormField
+											control={form.control}
+											name="useCustomEntrypoint"
+											render={({ field }) => (
+												<FormItem className="flex flex-row items-center justify-between p-3 border rounded-lg shadow-xs">
+													<div className="space-y-0.5">
+														<FormLabel>Custom Entrypoint</FormLabel>
+														<FormDescription>
+															Use custom entrypoint for domain
+															<br />
+															"web" and/or "websecure" is used by default.
+														</FormDescription>
+														<FormMessage />
+													</div>
+													<FormControl>
+														<Switch
+															checked={field.value}
+															onCheckedChange={(checked) => {
+																field.onChange(checked);
+																if (!checked) {
+																	form.setValue("customEntrypoint", undefined);
+																}
 															}}
 														/>
-													</Badge>
-												))}
-											</div>
-											<FormControl>
-												<div className="flex gap-2">
-													<Input
-														placeholder="e.g., rate-limit@file, auth@file"
-														onKeyDown={(e) => {
-															if (e.key === "Enter") {
-																e.preventDefault();
-																const input = e.currentTarget;
-																const value = input.value.trim();
-																if (value && !field.value?.includes(value)) {
-																	form.setValue("middlewares", [
-																		...(field.value || []),
-																		value,
-																	]);
-																	input.value = "";
-																}
-															}
-														}}
-													/>
-													<Button
-														type="button"
-														variant="secondary"
-														onClick={() => {
-															const input = document.querySelector(
-																'input[placeholder="e.g., rate-limit@file, auth@file"]',
-															) as HTMLInputElement;
-															const value = input.value.trim();
-															if (value && !field.value?.includes(value)) {
-																form.setValue("middlewares", [
-																	...(field.value || []),
-																	value,
-																]);
-																input.value = "";
-															}
-														}}
-													>
-														Add
-													</Button>
-												</div>
-											</FormControl>
-											<FormMessage />
-										</FormItem>
-									)}
-								/>
+													</FormControl>
+												</FormItem>
+											)}
+										/>
+
+										{useCustomEntrypoint && (
+											<FormField
+												control={form.control}
+												name="customEntrypoint"
+												render={({ field }) => (
+													<FormItem className="w-full">
+														<FormLabel>Entrypoint Name</FormLabel>
+														<FormControl>
+															<Input
+																placeholder="Enter entrypoint name manually"
+																{...field}
+																className="w-full"
+															/>
+														</FormControl>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+										)}
+
+										<FormField
+											control={form.control}
+											name="middlewares"
+											render={({ field }) => (
+												<FormItem>
+													<div className="flex items-center gap-2">
+														<FormLabel>Middlewares</FormLabel>
+														<TooltipProvider>
+															<Tooltip>
+																<TooltipTrigger type="button">
+																	<div className="size-4 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold">
+																		?
+																	</div>
+																</TooltipTrigger>
+																<TooltipContent className="max-w-[300px]">
+																	<p>
+																		Add Traefik middleware references.
+																		Middlewares must be defined in your Traefik
+																		configuration.
+																	</p>
+																</TooltipContent>
+															</Tooltip>
+														</TooltipProvider>
+													</div>
+													<div className="flex flex-wrap gap-2 mb-2">
+														{field.value?.map((name, index) => (
+															<Badge key={index} variant="secondary">
+																{name}
+																<X
+																	className="ml-1 size-3 cursor-pointer"
+																	onClick={() => {
+																		const newMiddlewares = [
+																			...(field.value || []),
+																		];
+																		newMiddlewares.splice(index, 1);
+																		form.setValue(
+																			"middlewares",
+																			newMiddlewares,
+																		);
+																	}}
+																/>
+															</Badge>
+														))}
+													</div>
+													<FormControl>
+														<div className="flex gap-2">
+															<Input
+																placeholder="e.g., rate-limit@file, auth@file"
+																onKeyDown={(e) => {
+																	if (e.key === "Enter") {
+																		e.preventDefault();
+																		const input = e.currentTarget;
+																		const value = input.value.trim();
+																		if (
+																			value &&
+																			!field.value?.includes(value)
+																		) {
+																			form.setValue("middlewares", [
+																				...(field.value || []),
+																				value,
+																			]);
+																			input.value = "";
+																		}
+																	}
+																}}
+															/>
+															<Button
+																type="button"
+																variant="secondary"
+																onClick={() => {
+																	const input = document.querySelector(
+																		'input[placeholder="e.g., rate-limit@file, auth@file"]',
+																	) as HTMLInputElement;
+																	const value = input.value.trim();
+																	if (value && !field.value?.includes(value)) {
+																		form.setValue("middlewares", [
+																			...(field.value || []),
+																			value,
+																		]);
+																		input.value = "";
+																	}
+																}}
+															>
+																Add
+															</Button>
+														</div>
+													</FormControl>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+									</CollapsibleContent>
+								</Collapsible>
 							</div>
 						</div>
 					</form>
 
-					<DialogFooter>
+					<DialogFooter className="items-center gap-3 sm:justify-between">
+						<p className="text-xs text-muted-foreground">
+							{domainId
+								? null
+								: describeDnsChoice(withDnsRecord ? dnsRecord : null, host)}
+						</p>
 						<Button
 							isLoading={isPending || createWithDns.isPending}
 							form="hook-form"

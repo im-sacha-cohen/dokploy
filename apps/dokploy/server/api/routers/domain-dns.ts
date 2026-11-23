@@ -153,10 +153,8 @@ export const domainDnsRouter = createTRPCRouter({
 				baseLabel: baseLabel(service.name, service.environmentName),
 				requestedName: input.name || undefined,
 				serverIps: await getServiceServerIps(service.serverId),
-				tunnel:
-					input.target === "tunnel"
-						? ((await usableTunnel(service.serverId)) ?? undefined)
-						: undefined,
+				tunnel: (await usableTunnel(service.serverId)) ?? undefined,
+				target: input.target,
 			});
 		}),
 

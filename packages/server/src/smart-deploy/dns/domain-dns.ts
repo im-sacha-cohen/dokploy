@@ -229,6 +229,7 @@ export const suggestDomainRecord = async ({
 	requestedName,
 	serverIps,
 	tunnel,
+	target = "ip",
 }: {
 	organizationId: string;
 	dnsProviderId: string;
@@ -236,8 +237,10 @@ export const suggestDomainRecord = async ({
 	baseLabel: string;
 	requestedName?: string;
 	serverIps: string[];
-	/** Suggest a name for a tunnel route instead of an A record. */
+	/** The server's tunnel, checked against the zone. */
 	tunnel?: TunnelTarget;
+	/** Whether the name is wanted as a tunnel route or an A record. */
+	target?: "ip" | "tunnel";
 }) => {
 	const { provider, zone } = await loadDnsZone(
 		organizationId,
@@ -249,7 +252,7 @@ export const suggestDomainRecord = async ({
 		tunnel ? checkTunnelForZone(provider.config, zone.id, tunnel) : null,
 	]);
 	const here =
-		tunnel && tunnelCheck?.usable
+		tunnel && target === "tunnel" && tunnelCheck?.usable
 			? tunnelRecordTarget(tunnel.tunnelId)
 			: serverIps;
 	const suggestion = suggestFqdn(records, baseLabel, zone.name, here);

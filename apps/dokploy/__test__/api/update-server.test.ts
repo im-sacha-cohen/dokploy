@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockGetDockerResourceType = vi.hoisted(() => vi.fn());
 const mockSpawnAsync = vi.hoisted(() => vi.fn());
 const mockGetUpdateData = vi.hoisted(() => vi.fn());
+const mockGetDokployImage = vi.hoisted(() => vi.fn(() => "dokploy/dokploy"));
 
 const noop = vi.fn();
 
@@ -23,6 +24,7 @@ vi.mock("@dokploy/server", () => ({
 	findServerById: noop,
 	getDockerDiskUsage: noop,
 	getDockerResourceType: mockGetDockerResourceType,
+	getDokployImage: mockGetDokployImage,
 	getDokployImageTag: () => "canary",
 	getLogCleanupStatus: noop,
 	getUpdateData: mockGetUpdateData,
@@ -145,5 +147,21 @@ describe("settings.updateServer", () => {
 			"docker",
 			expect.arrayContaining(["service", "update", "dokploy/dokploy:v9.9.9"]),
 		);
+	});
+
+	it("updates a fork to the latest build of its own image", async () => {
+		mockGetDockerResourceType.mockResolvedValue("service");
+		mockGetDokployImage.mockReturnValue("ghcr.io/me/dokploy");
+		mockGetUpdateData.mockResolvedValue({
+			latestVersion: "smart-deploy",
+			updateAvailable: true,
+		});
+		mockSpawnAsync.mockResolvedValue({ stdout: "", stderr: null });
+
+		await expect(caller.updateServer()).resolves.toBe(true);
+
+		const args = mockSpawnAsync.mock.calls[0]?.[1] as string[];
+		expect(args).toContain("ghcr.io/me/dokploy:smart-deploy");
+		expect(args.join(" ")).not.toContain("dokploy/dokploy");
 	});
 });

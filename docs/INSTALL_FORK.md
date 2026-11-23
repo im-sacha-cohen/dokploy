@@ -110,10 +110,16 @@ Then, on the server, `docker login ghcr.io` if the image is private.
 docker service update \
   --image dokploy-fork:smart-deploy \
   --env-add DOKPLOY_MCP_RESOURCE_URL=https://panel.example.com/mcp \
+  --env-add DOKPLOY_IMAGE=dokploy-fork \
+  --env-add RELEASE_TAG=smart-deploy \
   dokploy
 ```
 
-Use `ghcr.io/<you>/dokploy:smart-deploy` for option B.
+Use `ghcr.io/<you>/dokploy:smart-deploy` for option B, with
+`DOKPLOY_IMAGE=ghcr.io/<you>/dokploy`.
+
+- `DOKPLOY_IMAGE` and `RELEASE_TAG` tell the panel's Update button which
+  image to follow (see step 8). `install-fork.sh` sets them for you.
 
 - `DOKPLOY_MCP_RESOURCE_URL` must be the exact public URL of `/mcp`. Without
   it, `/mcp` answers 503: the MCP server is off, the rest works.
@@ -154,15 +160,26 @@ Destructive actions (delete, stop, restore) and every container command ask for
 a confirmation in the client. A client that cannot show one (no MCP
 elicitation support) is refused for these actions.
 
-## 8. Updates: do not use the built-in "Update" button
+## 8. Updates: the built-in "Update" button follows the fork
 
-Settings › Web Server › Update runs
-`docker service update --image dokploy/dokploy:<version>`, which replaces the
-fork with the official image.
+When the service has `DOKPLOY_IMAGE` and `RELEASE_TAG` (step 5, or
+`install-fork.sh`), Settings › Web Server › Update:
 
-To update the fork:
-1. Rebuild the image from an updated branch (step 4).
-2. Run the `docker service update --image …` command again (step 5).
+- compares the digest the service runs with the digest behind
+  `DOKPLOY_IMAGE:RELEASE_TAG` in the registry (anonymous access, so the image
+  must be public);
+- shows the commits, `current → latest`, with a link to the changes;
+- runs `docker service update --image $DOKPLOY_IMAGE:$RELEASE_TAG dokploy`.
+
+Settings › Web Server › Reload restarts the service on the digest it already
+runs; it no longer swaps the image.
+
+Without these variables, both buttons keep the official behaviour, which
+replaces the fork with `dokploy/dokploy`. A server switched before this
+change needs `install-fork.sh` to be run once more to get them.
+
+New official Dokploy releases reach the fork when they are merged into the
+fork's branch: the next build is then offered by the Update button.
 
 ## 9. Roll back
 

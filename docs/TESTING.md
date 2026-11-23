@@ -261,6 +261,27 @@ Environment failures, unrelated to the code:
 - Browser: Format button and Shift+Alt+F tried on the demo compose (not saved).
 - Lint (biome) and typecheck (`tsc --noEmit`) of the app: pass.
 
+## Update button follows the fork's image (2026-11-23)
+
+- Unit tests `apps/dokploy/__test__/update/custom-image-update.test.ts`:
+  **11/11** (image reference parsing; anonymous registry token; digest and
+  commit behind a tag through a multi-arch index; update offered, up to date,
+  registry unreachable; Reload keeps the image of a fork and still pins the
+  official version otherwise). `__test__/api/update-server.test.ts`: **5/5**,
+  including the fork image passed to `docker service update`. Traefik and
+  update suites together: 155/155.
+- Real check, `dev/demo-apps/fork-update-e2e.mjs`: **5/5**, against GHCR and
+  the devbox Swarm. A probe service (0 replicas, nothing started) on the older
+  build `smart-deploy-0099e31` is offered `0099e31 → 3a832e2`; the button's
+  `docker service update --image` moves it to exactly the digest the check
+  saw; the check then says up to date. Probe removed.
+- `install-fork.sh`: `bash -n` passes and the image/tag split was run on four
+  references. **Not run on a real server**: the `DOKPLOY_IMAGE`/`RELEASE_TAG`
+  variables and the rollback that removes them are untested there.
+- Not checked in the browser: the dialog's `current → latest` line and the
+  "changes" link (no `dokploy` service in the devbox). Typecheck passes.
+- Lint (biome) and typecheck of the app and `packages/server`: pass.
+
 ## Merge of upstream Dokploy v0.31.4 (2026-11-23)
 
 The fork was based on upstream `46a0762` (2026-10-31); v0.31.4 adds 257

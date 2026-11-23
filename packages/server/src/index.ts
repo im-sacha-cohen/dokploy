@@ -28,6 +28,7 @@ export * from "./services/git-provider";
 export * from "./services/gitea";
 export * from "./services/github";
 export * from "./services/gitlab";
+export * from "./services/image-update";
 export * from "./services/libsql";
 export * from "./services/logs-and-metrics/provider-fetch";
 export * from "./services/logs-and-metrics/providers/registry";

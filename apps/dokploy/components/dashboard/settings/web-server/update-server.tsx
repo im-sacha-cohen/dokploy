@@ -55,6 +55,20 @@ export const UpdateServer = ({
 		updateData?.latestVersion ?? "",
 	);
 	const [isOpenInternal, setIsOpenInternal] = useState(false);
+	const [imageDetails, setImageDetails] = useState(
+		updateData?.image ? updateData : null,
+	);
+	const shortRevision = (revision?: string | null) => revision?.slice(0, 7);
+	const releaseNotesUrl = (() => {
+		const source = imageDetails?.sourceUrl;
+		if (!imageDetails?.image || !source) {
+			return "https://github.com/Dokploy/dokploy/releases";
+		}
+		const { currentRevision, latestRevision } = imageDetails;
+		return currentRevision && latestRevision
+			? `${source}/compare/${currentRevision}...${latestRevision}`
+			: `${source}/commits/${latestRevision ?? ""}`;
+	})();
 
 	const handleCheckUpdates = async () => {
 		try {
@@ -63,6 +77,7 @@ export const UpdateServer = ({
 			setHasCheckedUpdate(true);
 			setIsUpdateAvailable(updateData.updateAvailable);
 			setLatestVersion(versionToUpdate);
+			setImageDetails(updateData.image ? updateData : null);
 
 			if (updateData.updateAvailable) {
 				toast.success(versionToUpdate, {
@@ -138,8 +153,7 @@ export const UpdateServer = ({
 							<Server className="h-4 w-4 text-muted-foreground" />
 							<span className="text-sm text-muted-foreground">
 								{dokployVersion}{" "}
-								{(releaseTag === "canary" || releaseTag === "feature") &&
-									`(${releaseTag})`}
+								{releaseTag && releaseTag !== "latest" && `(${releaseTag})`}
 							</span>
 						</div>
 					)}
@@ -178,6 +192,13 @@ export const UpdateServer = ({
 								{latestVersion}
 							</span>
 						</div>
+						{imageDetails?.image && (
+							<p className="text-sm text-muted-foreground mb-4 font-mono break-all">
+								{imageDetails.image}
+								{imageDetails.latestRevision &&
+									` · ${shortRevision(imageDetails.currentRevision) ?? "?"} → ${shortRevision(imageDetails.latestRevision)}`}
+							</p>
+						)}
 
 						<div className="space-y-4 text-muted-foreground">
 							<p className="text">
@@ -233,7 +254,7 @@ export const UpdateServer = ({
 								<h3 className="text-lg font-medium">Checking for updates...</h3>
 								<p className="text text-muted-foreground">
 									Please wait while we pull the latest version information from
-									Docker Hub.
+									the image registry.
 								</p>
 							</div>
 						</div>
@@ -247,11 +268,11 @@ export const UpdateServer = ({
 							<div className="text-[#5B9DFF]">
 								We recommend reviewing the{" "}
 								<Link
-									href="https://github.com/Dokploy/dokploy/releases"
+									href={releaseNotesUrl}
 									target="_blank"
 									className="text-white underline hover:text-zinc-200"
 								>
-									release notes
+									{imageDetails?.image ? "changes" : "release notes"}
 								</Link>{" "}
 								for any breaking changes before updating.
 							</div>

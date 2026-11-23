@@ -19,6 +19,7 @@ DOMAIN=""
 ROLLBACK=0
 STATE_DIR=/root/dokploy-fork
 PREVIOUS_FILE="$STATE_DIR/previous-image"
+PREVIOUS_TAG_FILE="$STATE_DIR/previous-release-tag"
 
 log() { printf '\033[1;34m[dokploy-fork]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[dokploy-fork]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -45,6 +46,25 @@ service_image() {
 	docker service inspect dokploy --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true
 }
 
+service_release_tag() {
+	docker service inspect dokploy --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null |
+		sed -n 's/^RELEASE_TAG=//p' | head -1
+}
+
+# Restores the official image and what it had in RELEASE_TAG (canary installs
+# set it), and drops the variables this script added.
+switch_back() {
+	local args=(--image "$1" --env-rm DOKPLOY_MCP_RESOURCE_URL --env-rm DOKPLOY_IMAGE)
+	local tag
+	tag="$(cat "$PREVIOUS_TAG_FILE" 2>/dev/null || true)"
+	if [ -n "$tag" ]; then
+		args+=(--env-add "RELEASE_TAG=$tag")
+	else
+		args+=(--env-rm RELEASE_TAG)
+	fi
+	docker service update "${args[@]}" dokploy >/dev/null
+}
+
 is_healthy() {
 	log "Waiting for Dokploy to answer on port 3000 (migrations run at startup)…"
 	for _ in $(seq 1 90); do
@@ -67,7 +87,7 @@ if [ "$ROLLBACK" = "1" ]; then
 	[ -s "$PREVIOUS_FILE" ] || fail "No recorded previous image in $PREVIOUS_FILE."
 	PREVIOUS="$(cat "$PREVIOUS_FILE")"
 	log "Rolling back to $PREVIOUS"
-	docker service update --image "$PREVIOUS" --env-rm DOKPLOY_MCP_RESOURCE_URL dokploy >/dev/null
+	switch_back "$PREVIOUS"
 	wait_healthy
 	log "Rolled back. Database backups are in $STATE_DIR."
 	exit 0
@@ -91,7 +111,10 @@ CURRENT="$(service_image)"
 # Keep the first official image as the rollback target across re-runs.
 case "$CURRENT" in
 	"$IMAGE"* | ghcr.io/*) ;;
-	*) printf '%s\n' "$CURRENT" >"$PREVIOUS_FILE" ;;
+	*)
+		printf '%s\n' "$CURRENT" >"$PREVIOUS_FILE"
+		service_release_tag >"$PREVIOUS_TAG_FILE"
+		;;
 esac
 log "Current image: $CURRENT"
 
@@ -108,7 +131,14 @@ fi
 log "Pulling $IMAGE"
 docker pull "$IMAGE" >/dev/null || fail "Cannot pull $IMAGE. If the package is private, run 'docker login ghcr.io' first."
 
-UPDATE_ARGS=(--image "$IMAGE")
+# The panel's Update button follows DOKPLOY_IMAGE:RELEASE_TAG, so it updates
+# to the latest build of this fork instead of the official image.
+IMAGE_NAME="${IMAGE%%@*}"
+case "${IMAGE_NAME##*/}" in
+	*:*) IMAGE_REPO="${IMAGE_NAME%:*}"; IMAGE_TAG="${IMAGE_NAME##*:}" ;;
+	*) IMAGE_REPO="$IMAGE_NAME"; IMAGE_TAG="latest" ;;
+esac
+UPDATE_ARGS=(--image "$IMAGE" --env-add "DOKPLOY_IMAGE=$IMAGE_REPO" --env-add "RELEASE_TAG=$IMAGE_TAG")
 if [ -n "$DOMAIN" ]; then
 	UPDATE_ARGS+=(--env-add "DOKPLOY_MCP_RESOURCE_URL=https://$DOMAIN/mcp")
 fi
@@ -118,7 +148,7 @@ if ! docker service update "${UPDATE_ARGS[@]}" dokploy >/dev/null || ! is_health
 	docker service logs dokploy --tail 40 2>&1 | tail -40 || true
 	ROLLBACK_TO="$(cat "$PREVIOUS_FILE" 2>/dev/null || printf '%s' "$CURRENT")"
 	log "Going back to $ROLLBACK_TO"
-	docker service update --image "$ROLLBACK_TO" --env-rm DOKPLOY_MCP_RESOURCE_URL dokploy >/dev/null || true
+	switch_back "$ROLLBACK_TO" || true
 	is_healthy || true
 	fail "Installation aborted, Dokploy runs $ROLLBACK_TO again. Database backup: $STATE_DIR"
 fi
@@ -131,5 +161,5 @@ if [ -n "$DOMAIN" ]; then
 else
 	log "MCP is off until you set the panel's HTTPS domain and re-run with --domain <host>."
 fi
-log "Do not use the built-in Update button: it would reinstall the official image."
+log "From now on, Settings › Web Server › Update installs the latest build of $IMAGE_REPO:$IMAGE_TAG."
 log "Roll back with: curl -sSL $SCRIPT_URL | sudo bash -s -- --rollback"

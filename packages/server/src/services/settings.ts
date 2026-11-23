@@ -17,9 +17,19 @@ import {
 	TRAEFIK_VERSION,
 	type TraefikOptions,
 } from "../setup/traefik-setup";
+import {
+	getCustomImageUpdateData,
+	getDokployImage,
+	isCustomDokployImage,
+} from "./image-update";
 export interface IUpdateData {
 	latestVersion: string | null;
 	updateAvailable: boolean;
+	/** Set when Dokploy runs a custom image (DOKPLOY_IMAGE), such as a fork. */
+	image?: string;
+	currentRevision?: string | null;
+	latestRevision?: string | null;
+	sourceUrl?: string | null;
 }
 
 export const DEFAULT_UPDATE_DATA: IUpdateData = {
@@ -52,6 +62,12 @@ export const getUpdateData = async (
 	currentVersion: string,
 ): Promise<IUpdateData> => {
 	try {
+		if (isCustomDokployImage()) {
+			return await getCustomImageUpdateData(
+				getDokployImageTag(),
+				await getServiceImageDigest(),
+			);
+		}
 		const baseUrl =
 			"https://hub.docker.com/v2/repositories/dokploy/dokploy/tags";
 		let url: string | null = `${baseUrl}?page_size=100`;
@@ -291,14 +307,17 @@ export const reloadDockerResource = async (
 	const resourceType = await getDockerResourceType(resourceName, serverId);
 	let command = "";
 	if (resourceType === "service") {
-		if (resourceName === "dokploy") {
+		if (resourceName === "dokploy" && isCustomDokployImage()) {
+			// Keep the digest the service runs: reloading must not update it.
+			command = `docker service update --force ${resourceName}`;
+		} else if (resourceName === "dokploy") {
 			const currentImageTag = getDokployImageTag();
 			let imageTag = version;
 			if (currentImageTag === "canary" || currentImageTag === "feature") {
 				imageTag = currentImageTag;
 			}
 
-			command = `docker service update --force --image dokploy/dokploy:${imageTag} ${resourceName}`;
+			command = `docker service update --force --image ${getDokployImage()}:${imageTag} ${resourceName}`;
 		} else {
 			command = `docker service update --force ${resourceName}`;
 		}

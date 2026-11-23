@@ -109,8 +109,10 @@ by GitHub Actions on every push, and is smoke-tested before it is published.
 Manual steps, updates and rollback details:
 [docs/INSTALL_FORK.md](docs/INSTALL_FORK.md).
 
-> ⚠️ Do not use Dokploy's built-in **Update** button: it reinstalls the official
-> image. Re-run the install command instead.
+Dokploy's **Update** button then follows this fork: it compares the running
+build with the latest one on GHCR, shows the commits, and updates to it.
+Servers installed before 2026-11-23 need the install command once more to get
+this behaviour; until then, the button reinstalls the official image.
 
 ---
 

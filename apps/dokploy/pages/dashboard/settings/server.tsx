@@ -4,6 +4,7 @@ import type { GetServerSidePropsContext } from "next";
 import type { ReactElement } from "react";
 import superjson from "superjson";
 import { ShowBackups } from "@/components/dashboard/database/backups/show-backups";
+import { TunnelStatusCard } from "@/components/dashboard/settings/servers/tunnel-status";
 import { WebDomain } from "@/components/dashboard/settings/web-domain";
 import { WebServer } from "@/components/dashboard/settings/web-server";
 import { DashboardLayout } from "@/components/layouts/dashboard-layout";
@@ -18,6 +19,7 @@ const Page = () => {
 			<div className="h-full rounded-xl  max-w-5xl mx-auto flex flex-col gap-4">
 				<WebDomain />
 				<WebServer />
+				<TunnelStatusCard />
 				<div className="w-full flex flex-col gap-4">
 					<Card className="h-full bg-sidebar  p-2.5 rounded-xl  mx-auto w-full">
 						<ShowBackups

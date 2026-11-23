@@ -21,6 +21,8 @@ export interface DnsRecordChoice {
 	name: string;
 	ip: string;
 	proxied: boolean;
+	/** "tunnel": a CNAME to the server's Cloudflare Tunnel, plus its route. */
+	target: "ip" | "tunnel";
 	/** False while the name is taken, invalid or being checked. */
 	ready: boolean;
 }
@@ -50,6 +52,7 @@ export const DnsRecordSection = ({
 	const [edited, setEdited] = useState(false);
 	const [ip, setIp] = useState("");
 	const [proxied, setProxied] = useState(false);
+	const [tunnelWanted, setTunnelWanted] = useState(true);
 
 	const providers = context?.providers ?? [];
 	const provider = providers.find((p) => p.dnsProviderId === providerId);
@@ -73,6 +76,12 @@ export const DnsRecordSection = ({
 	const zone = zones?.find((z) => z.id === zoneId);
 	const zoneName = zone?.name.replace(/\.$/, "").toLowerCase() ?? "";
 
+	const tunnelDetected =
+		context?.tunnel?.status === "found" &&
+		provider?.providerType === "cloudflare";
+	const requestedTarget =
+		tunnelDetected && tunnelWanted ? ("tunnel" as const) : ("ip" as const);
+
 	const debouncedLabel = useDebounce(label, 400);
 	const {
 		data: check,
@@ -85,6 +94,7 @@ export const DnsRecordSection = ({
 			dnsProviderId: providerId,
 			zoneId,
 			name: edited && debouncedLabel ? debouncedLabel : undefined,
+			target: requestedTarget,
 		},
 		{ enabled: enabled && !!providerId && !!zoneId, retry: false },
 	);
@@ -96,6 +106,14 @@ export const DnsRecordSection = ({
 			setLabel(fqdn === zoneName ? "@" : fqdn.slice(0, -(zoneName.length + 1)));
 		}
 	}, [check, edited, zoneName]);
+
+	// The server checks the tunnel against the zone and falls back to an A
+	// record when it cannot be used.
+	const tunnelCheck = requestedTarget === "tunnel" ? check?.tunnel : null;
+	const target =
+		requestedTarget === "tunnel" && tunnelCheck?.usable !== false
+			? ("tunnel" as const)
+			: ("ip" as const);
 
 	const fqdn = useMemo(() => {
 		if (!zoneName) return "";
@@ -118,13 +136,21 @@ export const DnsRecordSection = ({
 		status.valid &&
 		status.status !== "taken" &&
 		!checking &&
-		!!ip &&
+		(target === "tunnel" ? !!tunnelCheck?.usable : !!ip) &&
 		fqdn === status.fqdn;
 
 	useEffect(() => {
 		onChange(
 			enabled && provider && zoneId && fqdn
-				? { dnsProviderId: providerId, zoneId, name: fqdn, ip, proxied, ready }
+				? {
+						dnsProviderId: providerId,
+						zoneId,
+						name: fqdn,
+						ip,
+						proxied,
+						target,
+						ready,
+					}
 				: null,
 		);
 	}, [
@@ -135,6 +161,7 @@ export const DnsRecordSection = ({
 		fqdn,
 		ip,
 		proxied,
+		target,
 		ready,
 		onChange,
 	]);
@@ -160,8 +187,9 @@ export const DnsRecordSection = ({
 				<div className="flex flex-col">
 					<Label htmlFor="dns-record-enabled">Create the DNS record</Label>
 					<span className="text-xs text-muted-foreground">
-						An A record is created at your DNS provider together with the
-						domain.
+						{target === "tunnel"
+							? "A route is added to the server's Cloudflare Tunnel, with its CNAME record, together with the domain."
+							: "An A record is created at your DNS provider together with the domain."}
 					</span>
 				</div>
 				<Switch
@@ -253,10 +281,52 @@ export const DnsRecordSection = ({
 						/>
 					</div>
 
+					{tunnelDetected && (
+						<div className="flex flex-col gap-1.5">
+							<div className="flex items-center gap-2">
+								<Switch
+									id="dns-record-tunnel"
+									checked={tunnelWanted}
+									onCheckedChange={setTunnelWanted}
+								/>
+								<Label htmlFor="dns-record-tunnel">
+									Route through the Cloudflare Tunnel
+									{tunnelCheck?.usable ? ` ${tunnelCheck.name}` : ""}
+								</Label>
+							</div>
+							{tunnelCheck && !tunnelCheck.usable ? (
+								<span className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
+									<TriangleAlert className="size-3.5 shrink-0" />
+									{tunnelCheck.reason} An A record is used instead.
+								</span>
+							) : (
+								tunnelWanted && (
+									<span className="text-xs text-muted-foreground">
+										Cloudflare handles HTTPS: Traefik serves this domain over
+										HTTP, without its own certificate.
+										{tunnelCheck?.usable && tunnelCheck.mode === "file"
+											? " The route is written to the tunnel's config.yml and cloudflared is restarted: the sites behind this tunnel, Dokploy included if you reach it through the tunnel, are cut off for a few seconds."
+											: ""}
+									</span>
+								)
+							)}
+						</div>
+					)}
+					{context.tunnel?.status === "unsupported" && (
+						<span className="flex items-center gap-1 text-xs text-muted-foreground">
+							<TriangleAlert className="size-3.5 shrink-0" />
+							Cloudflare Tunnel found on this server: {context.tunnel.reason}
+						</span>
+					)}
+
 					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 						<div className="flex flex-col gap-1.5">
 							<Label>Points to</Label>
-							{context.serverIps.length > 1 ? (
+							{target === "tunnel" && context.tunnel?.status === "found" ? (
+								<span className="break-all text-sm">
+									CNAME {context.tunnel.tunnelId}.cfargotunnel.com
+								</span>
+							) : context.serverIps.length > 1 ? (
 								<Select value={ip} onValueChange={setIp}>
 									<SelectTrigger>
 										<SelectValue />
@@ -275,7 +345,7 @@ export const DnsRecordSection = ({
 								</span>
 							)}
 						</div>
-						{provider?.providerType === "cloudflare" && (
+						{provider?.providerType === "cloudflare" && target === "ip" && (
 							<div className="flex items-center gap-2 pt-6">
 								<Switch
 									id="dns-record-proxied"

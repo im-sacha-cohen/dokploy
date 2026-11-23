@@ -245,8 +245,13 @@ export const HandleDnsProvider = ({ dnsProviderId }: Props) => {
 			config: buildConfig(data),
 			...(dnsProviderId && { dnsProviderId }),
 		})
-			.then(() => {
+			.then((result) => {
 				toast.success("Connection successful");
+				if (result.tunnelAccess && !result.tunnelAccess.ok) {
+					toast.warning("Cloudflare Tunnel routes unavailable", {
+						description: result.tunnelAccess.reason,
+					});
+				}
 			})
 			.catch((err) => {
 				toast.error("Connection failed", {

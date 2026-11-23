@@ -3,6 +3,7 @@ import {
 	Activity,
 	BarChartHorizontalBigIcon,
 	Clock,
+	CloudCog,
 	Key,
 	Loader2,
 	Network,
@@ -39,6 +40,7 @@ import { HandleServers } from "./handle-servers";
 import { ShowServerSecurity } from "./security/show-server-security";
 import { SetupServer } from "./setup-server";
 import { ShowMonitoringModal } from "./show-monitoring-modal";
+import { TunnelStatusModal } from "./tunnel-status";
 import { WelcomeSubscription } from "./welcome-stripe/welcome-subscription";
 
 export const ShowServers = () => {
@@ -315,6 +317,27 @@ export const ShowServers = () => {
 																			</ShowServerActions>
 																			<TooltipContent>
 																				<p>Web Server Actions</p>
+																			</TooltipContent>
+																		</Tooltip>
+																	)}
+
+																	{server.sshKeyId && !isBuildServer && (
+																		<Tooltip>
+																			<TunnelStatusModal
+																				serverId={server.serverId}
+																			>
+																				<TooltipTrigger asChild>
+																					<Button
+																						variant="outline"
+																						size="icon"
+																						className="h-9 w-9"
+																					>
+																						<CloudCog className="h-4 w-4" />
+																					</Button>
+																				</TooltipTrigger>
+																			</TunnelStatusModal>
+																			<TooltipContent>
+																				<p>Cloudflare Tunnel</p>
 																			</TooltipContent>
 																		</Tooltip>
 																	)}

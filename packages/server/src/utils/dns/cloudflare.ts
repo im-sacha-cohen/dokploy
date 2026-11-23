@@ -5,7 +5,7 @@ import {
 import type { z } from "zod";
 import { type DnsClient, dnsFetch } from "./types";
 
-type CloudflareConfig = z.infer<typeof cloudflareDnsConfigSchema>;
+export type CloudflareConfig = z.infer<typeof cloudflareDnsConfigSchema>;
 
 type CloudflareResponse<T> = {
 	success: boolean;
@@ -78,7 +78,7 @@ const buildValue = (record: { type: string; content: string }) => {
 	return { content: value };
 };
 
-const cfFetch = async <T>(
+export const cfFetch = async <T>(
 	config: CloudflareConfig,
 	path: string,
 	init: RequestInit = {},

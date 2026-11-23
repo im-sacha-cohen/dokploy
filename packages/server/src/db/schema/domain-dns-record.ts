@@ -18,6 +18,11 @@ export const domainDnsRecord = pgTable("domain_dns_record", {
 	zoneId: text("zoneId").notNull(),
 	recordId: text("recordId").notNull(),
 	name: text("name").notNull(),
+	// Set when the record is a CNAME to a Cloudflare Tunnel: the route Dokploy
+	// added to that tunnel is removed with the record.
+	tunnelAccountId: text("tunnelAccountId"),
+	tunnelId: text("tunnelId"),
+	tunnelService: text("tunnelService"),
 	createdAt: text("createdAt")
 		.notNull()
 		.$defaultFn(() => new Date().toISOString()),

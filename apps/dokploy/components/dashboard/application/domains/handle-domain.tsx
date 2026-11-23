@@ -302,6 +302,10 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 	useEffect(() => {
 		if (withDnsRecord && dnsRecord) {
 			form.setValue("host", dnsRecord.name, { shouldValidate: true });
+			if (dnsRecord.target === "tunnel" && form.getValues("https")) {
+				form.setValue("https", false);
+				form.setValue("certificateType", "none");
+			}
 		}
 	}, [withDnsRecord, dnsRecord, form]);
 
@@ -328,14 +332,17 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 						dnsProviderId: dnsRecord.dnsProviderId,
 						zoneId: dnsRecord.zoneId,
 						name: dnsRecord.name,
-						ip: dnsRecord.ip,
+						ip: dnsRecord.target === "ip" ? dnsRecord.ip : undefined,
 						proxied: dnsRecord.proxied,
+						target: dnsRecord.target,
 					})
 					.then((result) => {
 						toast.success(
-							result.record.created
-								? `DNS record ${result.record.name} created`
-								: `${result.record.name} already pointed to this server`,
+							result.record.viaTunnel
+								? `${result.record.name} routed through the Cloudflare Tunnel`
+								: result.record.created
+									? `DNS record ${result.record.name} created`
+									: `${result.record.name} already pointed to this server`,
 						);
 					})
 			: mutateAsync(payload)

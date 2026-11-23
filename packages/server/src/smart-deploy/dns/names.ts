@@ -61,12 +61,24 @@ export const isValidHostInZone = (fqdn: string, zone: string) => {
 	);
 };
 
+/** What a record must be to count as already pointing here. */
+export interface RecordTarget {
+	type: "A" | "CNAME";
+	contents: string[];
+}
+
+const asTarget = (here: string[] | RecordTarget): RecordTarget =>
+	Array.isArray(here) ? { type: "A", contents: here } : here;
+
+/** `here` is the server's IPs (A records) or a CNAME target such as a tunnel. */
 export const classifyName = (
 	records: ExistingRecord[],
 	fqdn: string,
-	serverIps: string[],
+	here: string[] | RecordTarget,
 ): NameStatus => {
 	const name = normalizeHost(fqdn);
+	const target = asTarget(here);
+	const contents = target.contents.map(normalizeHost);
 	const conflicting = records.filter(
 		(r) =>
 			normalizeHost(r.name) === name &&
@@ -74,7 +86,9 @@ export const classifyName = (
 	);
 	if (conflicting.length === 0) return { status: "free" };
 	const allHere = conflicting.every(
-		(r) => r.type.toUpperCase() === "A" && serverIps.includes(r.content.trim()),
+		(r) =>
+			r.type.toUpperCase() === target.type &&
+			contents.includes(normalizeHost(r.content)),
 	);
 	if (allHere && conflicting[0]) {
 		return { status: "points_here", recordId: conflicting[0].id };
@@ -90,13 +104,13 @@ export const suggestFqdn = (
 	records: ExistingRecord[],
 	base: string,
 	zone: string,
-	serverIps: string[],
+	here: string[] | RecordTarget,
 ) => {
 	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 		const suffix = attempt === 1 ? "" : `-${attempt}`;
 		const label = `${base.slice(0, MAX_LABEL - suffix.length).replace(/-+$/, "")}${suffix}`;
 		const fqdn = toFqdn(label, zone);
-		const status = classifyName(records, fqdn, serverIps);
+		const status = classifyName(records, fqdn, here);
 		if (status.status !== "taken") return { fqdn, status };
 	}
 	return null;

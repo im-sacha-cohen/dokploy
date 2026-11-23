@@ -5,6 +5,8 @@ import {
 	findDomainById,
 	findDomainsByApplicationId,
 	findDomainsByComposeId,
+	findServerById,
+	getAccessibleServerIds,
 } from "@dokploy/server";
 import {
 	checkPermission,
@@ -14,14 +16,20 @@ import {
 import {
 	deleteRecordQuietly,
 	describeTrackedRecord,
+	describeTunnelForProvider,
 	ensureDomainRecord,
 	findTrackedDomainIds,
 	findTrackedRecord,
 	getServiceServerIps,
+	removeTunnelRouteQuietly,
 	suggestDomainRecord,
+	type TunnelProviderStatus,
+	type TunnelTarget,
 	trackDomainRecord,
+	trackedTunnel,
 } from "@dokploy/server/smart-deploy/dns/domain-dns";
 import { baseLabel } from "@dokploy/server/smart-deploy/dns/names";
+import { detectTunnel } from "@dokploy/server/smart-deploy/tunnel/detect";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
@@ -35,6 +43,16 @@ const serviceInput = z.object({
 });
 
 type Ctx = Parameters<typeof checkPermission>[0];
+
+const recordTarget = z.enum(["ip", "tunnel"]).default("ip");
+
+/** The tunnel connector of the server, if Dokploy can add routes to it. */
+const usableTunnel = async (
+	serverId?: string | null,
+): Promise<TunnelTarget | null> => {
+	const tunnel = await detectTunnel(serverId);
+	return tunnel?.status === "found" ? tunnel : null;
+};
 
 /** Name, environment and server of the service, after the domain permission check. */
 const loadService = async (
@@ -88,13 +106,26 @@ export const domainDnsRouter = createTRPCRouter({
 						providerType: p.providerType,
 					}))
 				: [];
+			const hasCloudflare = providers.some(
+				(p) => p.providerType === "cloudflare",
+			);
+			const [serverIps, tunnel] = await Promise.all([
+				providers.length ? getServiceServerIps(service.serverId) : [],
+				hasCloudflare ? detectTunnel(service.serverId) : null,
+			]);
 			return {
 				providers,
 				canCreateRecords: canCreate,
 				baseLabel: baseLabel(service.name, service.environmentName),
-				serverIps: providers.length
-					? await getServiceServerIps(service.serverId)
-					: [],
+				serverIps,
+				tunnel:
+					tunnel?.status === "found"
+						? {
+								status: "found" as const,
+								tunnelId: tunnel.tunnelId,
+								withConfigFile: !!tunnel.configFile,
+							}
+						: tunnel,
 			};
 		}),
 
@@ -104,6 +135,7 @@ export const domainDnsRouter = createTRPCRouter({
 				dnsProviderId: ID,
 				zoneId: z.string().min(1).max(255),
 				name: z.string().max(253).optional(),
+				target: recordTarget,
 			}),
 		)
 		.query(async ({ ctx, input }) => {
@@ -121,6 +153,10 @@ export const domainDnsRouter = createTRPCRouter({
 				baseLabel: baseLabel(service.name, service.environmentName),
 				requestedName: input.name || undefined,
 				serverIps: await getServiceServerIps(service.serverId),
+				tunnel:
+					input.target === "tunnel"
+						? ((await usableTunnel(service.serverId)) ?? undefined)
+						: undefined,
 			});
 		}),
 
@@ -130,13 +166,21 @@ export const domainDnsRouter = createTRPCRouter({
 				dnsProviderId: ID,
 				zoneId: z.string().min(1).max(255),
 				name: z.string().min(1).max(253),
-				ip: z.ipv4(),
+				ip: z.ipv4().optional(),
 				proxied: z.boolean().default(false),
+				target: recordTarget,
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const { dnsProviderId, zoneId, name, ip, proxied, ...domainInput } =
-				input;
+			const {
+				dnsProviderId,
+				zoneId,
+				name,
+				ip,
+				proxied,
+				target,
+				...domainInput
+			} = input;
 			const serviceType =
 				domainInput.domainType === "compose" ? "compose" : "application";
 			const serviceId =
@@ -152,6 +196,22 @@ export const domainDnsRouter = createTRPCRouter({
 			const service = await loadService(ctx, serviceType, serviceId, "create");
 			await checkPermission(ctx, { dnsProvider: ["update"] });
 
+			let tunnel: TunnelTarget | undefined;
+			if (target === "tunnel") {
+				tunnel = (await usableTunnel(service.serverId)) ?? undefined;
+				if (!tunnel) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message:
+							"No Cloudflare Tunnel that Dokploy can manage runs on this server",
+					});
+				}
+				// Cloudflare terminates TLS and the tunnel reaches Traefik over
+				// HTTP: an HTTPS redirect in Traefik would loop forever.
+				domainInput.https = false;
+				domainInput.certificateType = "none";
+			}
+
 			const record = await ensureDomainRecord({
 				organizationId: ctx.session.activeOrganizationId,
 				dnsProviderId,
@@ -160,6 +220,8 @@ export const domainDnsRouter = createTRPCRouter({
 				ip,
 				serverIps: await getServiceServerIps(service.serverId),
 				proxied,
+				tunnel,
+				serverId: service.serverId,
 			});
 
 			let domain: Awaited<
@@ -181,19 +243,35 @@ export const domainDnsRouter = createTRPCRouter({
 						console.error("[domain-dns] rollback failed:", cleanupError),
 					);
 				}
+				if (record.routeCreated && record.tunnel) {
+					await removeTunnelRouteQuietly(
+						ctx.session.activeOrganizationId,
+						dnsProviderId,
+						record.name,
+						record.tunnel,
+						service.serverId,
+					).catch((cleanupError) =>
+						console.error("[domain-dns] route rollback failed:", cleanupError),
+					);
+				}
 				throw error;
 			}
-			if (record.created) {
+			if (record.created || record.routeCreated) {
 				await trackDomainRecord(domain.domainId, {
 					dnsProviderId,
 					zoneId,
 					recordId: record.recordId,
 					name: record.name,
+					tunnel: record.tunnel,
 				});
 			}
 			return {
 				domain,
-				record: { name: record.name, created: record.created },
+				record: {
+					name: record.name,
+					created: record.created,
+					viaTunnel: !!record.tunnel,
+				},
 			};
 		}),
 
@@ -237,6 +315,74 @@ export const domainDnsRouter = createTRPCRouter({
 			};
 		}),
 
+	/** The Cloudflare Tunnel connector of a server, for its settings page. */
+	tunnelStatus: protectedProcedure
+		.input(
+			z.object({
+				serverId: ID.optional(),
+				refresh: z.boolean().default(false),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			if (input.serverId) {
+				await checkPermission(ctx, { server: ["read"] });
+				const server = await findServerById(input.serverId);
+				const accessible = await getAccessibleServerIds(ctx.session);
+				if (
+					server.organizationId !== ctx.session.activeOrganizationId ||
+					!accessible.has(input.serverId)
+				) {
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: "Server not found",
+					});
+				}
+			} else if (ctx.user.role !== "owner" && ctx.user.role !== "admin") {
+				throw new TRPCError({ code: "UNAUTHORIZED" });
+			}
+
+			const tunnel = await detectTunnel(input.serverId, input.refresh);
+			if (tunnel?.status !== "found") return { tunnel, providers: [] };
+
+			const providers = (await hasPermission(ctx, { dnsProvider: ["read"] }))
+				? (
+						await findDnsProvidersByOrganizationId(
+							ctx.session.activeOrganizationId,
+						)
+					).filter((p) => p.config.providerType === "cloudflare")
+				: [];
+			return {
+				tunnel: {
+					status: tunnel.status,
+					tunnelId: tunnel.tunnelId,
+					connector: tunnel.connector,
+					origin: tunnel.origin,
+					configPath: tunnel.configFile?.path ?? null,
+					configProblem: tunnel.configProblem ?? null,
+				},
+				providers: await Promise.all(
+					providers.map(async (provider) => ({
+						name: provider.name,
+						status:
+							provider.config.providerType === "cloudflare"
+								? await describeTunnelForProvider(
+										provider.config,
+										tunnel,
+									).catch(
+										(error): TunnelProviderStatus => ({
+											usable: false,
+											reason:
+												error instanceof Error
+													? error.message
+													: "Cloudflare could not be reached",
+										}),
+									)
+								: ({ usable: false, reason: "Not Cloudflare" } as const),
+					})),
+				),
+			};
+		}),
+
 	deleteDomain: protectedProcedure
 		.input(z.object({ domainId: ID, deleteRecord: z.boolean() }))
 		.mutation(async ({ ctx, input }) => {
@@ -246,6 +392,9 @@ export const domainDnsRouter = createTRPCRouter({
 				zoneId: string;
 				recordId: string;
 				providerId: string;
+				name: string;
+				tunnel: ReturnType<typeof trackedTunnel>;
+				serverId: string | null;
 			} | null = null;
 			if (input.deleteRecord) {
 				if (!serviceId) {
@@ -277,10 +426,19 @@ export const domainDnsRouter = createTRPCRouter({
 							"This domain has no DNS record created by Dokploy",
 					});
 				}
+				if (!tracked) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: "This domain has no DNS record created by Dokploy",
+					});
+				}
 				record = {
-					providerId: tracked?.dnsProviderId as string,
-					zoneId: tracked?.zoneId as string,
-					recordId: tracked?.recordId as string,
+					providerId: tracked.dnsProviderId as string,
+					zoneId: tracked.zoneId,
+					recordId: tracked.recordId,
+					name: tracked.name,
+					tunnel: trackedTunnel(tracked),
+					serverId: service.serverId ?? null,
 				};
 			}
 
@@ -294,6 +452,15 @@ export const domainDnsRouter = createTRPCRouter({
 					record.zoneId,
 					record.recordId,
 				);
+				if (record.tunnel) {
+					await removeTunnelRouteQuietly(
+						ctx.session.activeOrganizationId,
+						record.providerId,
+						record.name,
+						record.tunnel,
+						record.serverId,
+					);
+				}
 				return { recordDeleted: true };
 			} catch (error) {
 				return {

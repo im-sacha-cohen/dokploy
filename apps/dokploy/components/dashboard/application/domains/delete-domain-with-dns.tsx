@@ -86,6 +86,7 @@ export const DeleteDomainWithDns = ({
 						/>
 						<Label htmlFor="delete-dns-record" className="leading-snug">
 							Also delete the DNS record {record.name} at {record.providerName}
+							{record.viaTunnel ? " and its Cloudflare Tunnel route" : ""}
 						</Label>
 					</div>
 				) : record ? (

@@ -315,6 +315,19 @@ sides kept), better-auth imports (both), lockfile (regenerated), migrations.
   "Check Version", and the new upstream features themselves (sandboxes,
   export/import, server transfer), beyond upstream's own tests.
 
+## Install script: update and rollback (2026-11-23)
+
+- `dev/install/install-fork-e2e.sh`, in a throwaway Docker-in-Docker Swarm
+  with a real Postgres, a local registry, a "good" and a "broken" build:
+  **20/20**. Official image → good fork build (database backed up with its
+  data, `DOKPLOY_IMAGE`/`RELEASE_TAG`/MCP URL set, official image recorded);
+  good → broken build refused, **back on the good fork build** with its
+  variables (before this change it went back to the official image), panel
+  answering, database untouched; `--rollback` to the official image with the
+  variables removed; database restore as written in `docs/UPDATING.md`.
+- Not run on a real Dokploy server: the fake Dokploy is a small HTTP server
+  answering the health URL.
+
 ## Reference manual tests (demo applications)
 
 See `docs/LOCAL_DEVELOPMENT.md` › *Test account and demo applications*: with the upstream engine, 7 deployments are `done`, 4 of them applications returning 502.

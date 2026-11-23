@@ -5,12 +5,14 @@
 #     | sudo bash -s -- --domain panel.example.com
 #
 # - No Dokploy yet: runs the official installer first, then switches to the fork.
-# - Dokploy already installed: backs up its database and /etc/dokploy, records
-#   the current image for rollback, then switches the `dokploy` service.
+# - Dokploy already installed (official or this fork): backs up its database
+#   and /etc/dokploy, then switches the `dokploy` service to the image. If the
+#   new image does not start, the service goes back to what ran before.
 # Options:
 #   --domain <host>   public HTTPS host of the panel; enables /mcp at https://<host>/mcp
 #   --image <ref>     image to run (default: ghcr.io/im-sacha-cohen/dokploy:smart-deploy)
-#   --rollback        go back to the image recorded before the switch
+#   --rollback        go back to the official image recorded before the first switch
+# Environment: DOKPLOY_FORK_WAIT_TRIES (default 90) health checks, 5 s apart.
 set -euo pipefail
 
 IMAGE="ghcr.io/im-sacha-cohen/dokploy:smart-deploy"
@@ -18,6 +20,7 @@ SCRIPT_URL="https://raw.githubusercontent.com/im-sacha-cohen/dokploy/feat/smart-
 DOMAIN=""
 ROLLBACK=0
 STATE_DIR=/root/dokploy-fork
+WAIT_TRIES="${DOKPLOY_FORK_WAIT_TRIES:-90}"
 PREVIOUS_FILE="$STATE_DIR/previous-image"
 PREVIOUS_TAG_FILE="$STATE_DIR/previous-release-tag"
 
@@ -46,9 +49,9 @@ service_image() {
 	docker service inspect dokploy --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true
 }
 
-service_release_tag() {
+service_env() {
 	docker service inspect dokploy --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null |
-		sed -n 's/^RELEASE_TAG=//p' | head -1
+		sed -n "s/^$1=//p" | head -1
 }
 
 # Restores the official image and what it had in RELEASE_TAG (canary installs
@@ -67,7 +70,7 @@ switch_back() {
 
 is_healthy() {
 	log "Waiting for Dokploy to answer on port 3000 (migrations run at startup)…"
-	for _ in $(seq 1 90); do
+	for _ in $(seq 1 "$WAIT_TRIES"); do
 		if curl -fs http://127.0.0.1:3000/api/trpc/settings.health >/dev/null 2>&1; then
 			log "Dokploy is up."
 			return 0
@@ -78,7 +81,16 @@ is_healthy() {
 }
 
 wait_healthy() {
-	is_healthy || fail "Dokploy did not answer after 7 minutes. Check: docker service logs dokploy --tail 100"
+	is_healthy || fail "Dokploy did not answer after $((WAIT_TRIES * 5 / 60)) minutes. Check: docker service logs dokploy --tail 100"
+}
+
+# Swarm keeps the spec that ran before the last update (image and variables):
+# going back to it restores exactly the Dokploy that was working, fork or not.
+undo_update() {
+	if [ "$(service_image)" = "$CURRENT" ]; then
+		return 0
+	fi
+	docker service rollback dokploy >/dev/null
 }
 
 mkdir -p "$STATE_DIR"
@@ -108,21 +120,27 @@ fi
 CURRENT="$(service_image)"
 [ -n "$CURRENT" ] || fail "The dokploy service was not found after installation."
 
-# Keep the first official image as the rollback target across re-runs.
-case "$CURRENT" in
-	"$IMAGE"* | ghcr.io/*) ;;
-	*)
-		printf '%s\n' "$CURRENT" >"$PREVIOUS_FILE"
-		service_release_tag >"$PREVIOUS_TAG_FILE"
-		;;
-esac
+# Keep the first official image as the --rollback target across re-runs. A
+# fork is recognised by DOKPLOY_IMAGE (set by this script) or, for servers
+# switched before that variable existed, by its GHCR name.
+if [ -z "$(service_env DOKPLOY_IMAGE)" ]; then
+	case "$CURRENT" in
+		"$IMAGE"* | ghcr.io/*) ;;
+		*)
+			printf '%s\n' "$CURRENT" >"$PREVIOUS_FILE"
+			service_env RELEASE_TAG >"$PREVIOUS_TAG_FILE"
+			;;
+	esac
+fi
 log "Current image: $CURRENT"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 PG="$(docker ps -qf name=dokploy-postgres | head -1)"
 if [ -n "$PG" ]; then
 	log "Backing up the Dokploy database to $STATE_DIR/dokploy-$STAMP.sql"
-	docker exec "$PG" pg_dump -U dokploy dokploy >"$STATE_DIR/dokploy-$STAMP.sql"
+	docker exec "$PG" pg_dump -U dokploy dokploy >"$STATE_DIR/dokploy-$STAMP.sql" ||
+		fail "The database backup failed: nothing was changed."
+	[ -s "$STATE_DIR/dokploy-$STAMP.sql" ] || fail "The database backup is empty: nothing was changed."
 fi
 if [ -d /etc/dokploy ]; then
 	tar czf "$STATE_DIR/etc-dokploy-$STAMP.tgz" -C / etc/dokploy 2>/dev/null || true
@@ -142,15 +160,16 @@ UPDATE_ARGS=(--image "$IMAGE" --env-add "DOKPLOY_IMAGE=$IMAGE_REPO" --env-add "R
 if [ -n "$DOMAIN" ]; then
 	UPDATE_ARGS+=(--env-add "DOKPLOY_MCP_RESOURCE_URL=https://$DOMAIN/mcp")
 fi
-log "Switching the dokploy service to the fork"
+log "Switching the dokploy service to $IMAGE"
 if ! docker service update "${UPDATE_ARGS[@]}" dokploy >/dev/null || ! is_healthy; then
-	log "The fork did not start. Last logs:"
+	log "The new image did not start. Last logs:"
 	docker service logs dokploy --tail 40 2>&1 | tail -40 || true
-	ROLLBACK_TO="$(cat "$PREVIOUS_FILE" 2>/dev/null || printf '%s' "$CURRENT")"
-	log "Going back to $ROLLBACK_TO"
-	switch_back "$ROLLBACK_TO" || true
-	is_healthy || true
-	fail "Installation aborted, Dokploy runs $ROLLBACK_TO again. Database backup: $STATE_DIR"
+	log "Going back to the image that ran before: $CURRENT"
+	undo_update || log "Automatic rollback failed: docker service rollback dokploy"
+	if is_healthy; then
+		fail "Update aborted: Dokploy runs $CURRENT again. Database backup: $STATE_DIR"
+	fi
+	fail "Update aborted and Dokploy does not answer. Database backup: $STATE_DIR. See docs/UPDATING.md."
 fi
 
 log "Done. Dokploy runs $IMAGE."

@@ -113,6 +113,7 @@ Dokploy's **Update** button then follows this fork: it compares the running
 build with the latest one on GHCR, shows the commits, and updates to it.
 Servers installed before 2026-11-23 need the install command once more to get
 this behaviour; until then, the button reinstalls the official image.
+Updating, what is kept and how to go back: [docs/UPDATING.md](docs/UPDATING.md).
 
 ---
 
@@ -178,7 +179,8 @@ Security model, threats and limits: [docs/MCP_SECURITY.md](docs/MCP_SECURITY.md)
 
 | Topic | Document |
 |---|---|
-| Install on a server, update, roll back | [INSTALL_FORK.md](docs/INSTALL_FORK.md) |
+| Install on a server | [INSTALL_FORK.md](docs/INSTALL_FORK.md) |
+| Update a server, what is kept, roll back, restore a backup | [UPDATING.md](docs/UPDATING.md) |
 | Diagnostic rules and how facts are collected | [DEPLOYMENT_DIAGNOSTICS.md](docs/DEPLOYMENT_DIAGNOSTICS.md) |
 | Version tracking, wizard, fixes | [SMART_DEPLOY_ENGINE.md](docs/SMART_DEPLOY_ENGINE.md) |
 | MCP server, tools, OAuth flow | [MCP_ARCHITECTURE.md](docs/MCP_ARCHITECTURE.md) |

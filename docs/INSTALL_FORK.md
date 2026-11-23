@@ -181,12 +181,17 @@ change needs `install-fork.sh` to be run once more to get them.
 New official Dokploy releases reach the fork when they are merged into the
 fork's branch: the next build is then offered by the Update button.
 
+Step-by-step update, what is kept, and how to restore a backup:
+[UPDATING.md](UPDATING.md).
+
 ## 9. Roll back
 
 ```bash
 docker service update \
   --image dokploy/dokploy:<previous-tag> \
   --env-rm DOKPLOY_MCP_RESOURCE_URL \
+  --env-rm DOKPLOY_IMAGE \
+  --env-rm RELEASE_TAG \
   dokploy
 ```
 

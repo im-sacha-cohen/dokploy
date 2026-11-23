@@ -261,6 +261,39 @@ Environment failures, unrelated to the code:
 - Browser: Format button and Shift+Alt+F tried on the demo compose (not saved).
 - Lint (biome) and typecheck (`tsc --noEmit`) of the app: pass.
 
+## Merge of upstream Dokploy v0.31.4 (2026-11-23)
+
+The fork was based on upstream `46a0762` (2026-10-31); v0.31.4 adds 257
+commits. Merge conflicts: README (fork's kept), tRPC router registry (both
+sides kept), better-auth imports (both), lockfile (regenerated), migrations.
+
+- **Migrations**: upstream also used numbers 0199-0202. The fork's three
+  migrations become one file, `0203_smart_deploy_mcp_dns.sql`, made idempotent
+  (`IF NOT EXISTS`, guarded constraints), because servers already on the fork
+  have these objects and run it again. Drizzle's generated SQL for 0203 has
+  exactly the same 50 statements.
+- **Upgrade test** `dev/migrations/upgrade-e2e.sh`: **11/11**. Starting from
+  the fork before the merge (old numbering), from official v0.31.4, and from
+  an empty database: migrations apply, a second run is a no-op, fork and
+  upstream objects exist, and both upgrades end with exactly the schema of a
+  fresh install (`pg_dump --schema-only`).
+- Typecheck of the app and `packages/server`: pass. All 103 API procedures in
+  the MCP allowlist still exist in the merged router.
+- Vitest, whole suite: 1891 passed, 2 failed. Known `backup-files` timeout;
+  the nixpacks real build timed out on its first image pull after the Docker
+  reset and passes on rerun (31 s).
+- End-to-end, on a devbox rebuilt from scratch: applications diagnosis A–G as
+  expected (wrong port, crash loop, missing env, localhost binding found as
+  root causes); databases and compose **16/16**; OAuth + MCP **36/36**;
+  platform through MCP **59/59**; deployments **24/24**; monitoring **14/14**;
+  compose Format deploy **8/8**; fork-aware Update **5/5**. First runs failed
+  on environment gaps (demo services and member not seeded yet, deployments
+  interrupted by a devbox restart) and passed once those were fixed.
+- Lint: fork files clean; remaining biome findings are in upstream files.
+- Not tested: the upgrade on the real server, Traefik v3.7.19 through
+  "Check Version", and the new upstream features themselves (sandboxes,
+  export/import, server transfer), beyond upstream's own tests.
+
 ## Reference manual tests (demo applications)
 
 See `docs/LOCAL_DEVELOPMENT.md` › *Test account and demo applications*: with the upstream engine, 7 deployments are `done`, 4 of them applications returning 502.

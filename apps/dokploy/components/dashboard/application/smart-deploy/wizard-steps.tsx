@@ -292,7 +292,6 @@ export const TimelineStep = ({
 		},
 	);
 	const settled = !!data?.settled;
-	// biome-ignore lint/correctness/useExhaustiveDependencies: notify once per settle transition
 	useEffect(() => {
 		if (settled) onSettled();
 	}, [settled]);

@@ -62,7 +62,6 @@ const OAuthConsent = () => {
 	useEffect(() => {
 		// Least privilege by default: only read access is pre-checked.
 		setSelected(offeredScopes.includes("mcp:read") ? ["mcp:read"] : []);
-		// biome-ignore lint/correctness/useExhaustiveDependencies: reset when the organization changes
 	}, [organizationId, data]);
 
 	const deny = async () => {

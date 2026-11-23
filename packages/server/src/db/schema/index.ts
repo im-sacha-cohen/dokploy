@@ -34,6 +34,7 @@ export * from "./redirects";
 export * from "./redis";
 export * from "./registry";
 export * from "./rollbacks";
+export * from "./sandbox";
 export * from "./schedule";
 export * from "./scim";
 export * from "./security";

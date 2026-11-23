@@ -1,5 +1,5 @@
 {
-  "id": "27685366-11ea-4f00-a5b0-c5c8a6f73cd5",
+  "id": "aba72797-8e4e-4a74-a5c5-cd5d1d19365a",
   "prevId": "4c5cd64c-f0fa-4b62-9a8e-504f2f435212",
   "version": "7",
   "dialect": "postgresql",
@@ -3005,96 +3005,6 @@
         "buildServerId": {
           "name": "buildServerId",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sourceDeploymentId": {
-          "name": "sourceDeploymentId",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sourceRepository": {
-          "name": "sourceRepository",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sourceBranch": {
-          "name": "sourceBranch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requestedCommitSha": {
-          "name": "requestedCommitSha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fetchedCommitSha": {
-          "name": "fetchedCommitSha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "builtCommitSha": {
-          "name": "builtCommitSha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "imageId": {
-          "name": "imageId",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "imageTag": {
-          "name": "imageTag",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "imageDigest": {
-          "name": "imageDigest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "runningImageId": {
-          "name": "runningImageId",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "containerId": {
-          "name": "containerId",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "taskId": {
-          "name": "taskId",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verificationStatus": {
-          "name": "verificationStatus",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verification": {
-          "name": "verification",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         }

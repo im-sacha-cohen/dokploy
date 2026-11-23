@@ -7,7 +7,7 @@ export const imageVersionMismatchRule: Rule = (ctx) => {
 	const latest = ctx.version?.latest;
 	const runningImage = ctx.container?.imageId;
 	// Only conclude when the latest deployment finished and recorded its image.
-	if (!latest || latest.status !== "done" || !latest.imageId || !runningImage) {
+	if (latest?.status !== "done" || !latest.imageId || !runningImage) {
 		return null;
 	}
 	if (runningImage === latest.imageId) return null;

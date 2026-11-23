@@ -205,7 +205,7 @@ export const restartApplicationService = async (applicationId: string) => {
 		const authconfig = await getAuthConfig(application);
 		await service.update({
 			...(authconfig ? { authconfig } : {}),
-			version: Number.parseInt(inspect.Version.Index),
+			version: Number.parseInt(inspect.Version.Index, 10),
 			...inspect.Spec,
 			TaskTemplate: {
 				...inspect.Spec.TaskTemplate,

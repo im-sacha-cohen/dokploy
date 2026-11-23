@@ -7,6 +7,7 @@ import {
 	BlocksIcon,
 	BookIcon,
 	BotIcon,
+	Box,
 	Boxes,
 	ChevronRight,
 	ChevronsUpDown,
@@ -205,6 +206,13 @@ const MENU: Menu = {
 			url: "/dashboard/schedules",
 			icon: Clock,
 			isEnabled: ({ permissions }) => !!permissions?.organization.update,
+		},
+		{
+			isSingle: true,
+			title: "Sandboxes",
+			url: "/dashboard/sandboxes",
+			icon: Box,
+			isEnabled: ({ permissions }) => !!permissions?.sandbox.read,
 		},
 		{
 			isSingle: true,

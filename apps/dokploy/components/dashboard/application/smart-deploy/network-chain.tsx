@@ -148,7 +148,8 @@ export const NetworkChain = ({ applicationId }: { applicationId: string }) => {
 						{chain.fix && (
 							<div className="flex flex-wrap items-center gap-2 text-sm">
 								<span className="text-red-700 dark:text-red-300">
-									{chain.domain.host} sends traffic to port {chain.domain.port};
+									{chain.domain.host} sends traffic to port {chain.domain.port}
+									{";"}
 									the app listens on {chain.fix.port}.
 								</span>
 								<ApplyFixButton

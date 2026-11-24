@@ -395,7 +395,10 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 						proxied: dnsRecord.proxied,
 						target: dnsRecord.target,
 					})
-					.then((result) => {
+					.then(async (result) => {
+						// The domain list offers to delete the record only for
+						// domains it knows are tracked.
+						await utils.domainDns.trackedDomains.invalidate();
 						toast.success(
 							result.record.viaTunnel
 								? `${result.record.name} routed through the Cloudflare Tunnel`

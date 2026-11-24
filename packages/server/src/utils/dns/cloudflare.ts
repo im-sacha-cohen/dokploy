@@ -16,6 +16,23 @@ type CloudflareResponse<T> = {
 
 const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 
+export class CloudflareApiError extends Error {
+	readonly detail: string;
+
+	constructor(
+		path: string,
+		readonly status: number,
+		readonly errors: { code: number; message: string }[],
+	) {
+		const detail = errors.map((e) => e.message).join(", ");
+		super(
+			`Cloudflare: request to ${path} failed${detail ? `: ${detail}` : ` (status ${status})`}`,
+		);
+		this.name = "CloudflareApiError";
+		this.detail = detail;
+	}
+}
+
 const inlinePriority = (record: {
 	type: string;
 	content: string;
@@ -94,10 +111,7 @@ export const cfFetch = async <T>(
 
 	const body = (await response.json()) as CloudflareResponse<T>;
 	if (!response.ok || !body.success) {
-		const detail = body.errors?.map((e) => e.message).join(", ");
-		throw new Error(
-			`Cloudflare: request to ${path} failed${detail ? `: ${detail}` : ` (status ${response.status})`}`,
-		);
+		throw new CloudflareApiError(path, response.status, body.errors ?? []);
 	}
 	return body.result;
 };

@@ -1,3 +1,4 @@
+import type { CloudflareTokenReport } from "@dokploy/server/utils/dns/cloudflare-permissions";
 import { standardSchemaResolver as zodResolver } from "@hookform/resolvers/standard-schema";
 import { PenBoxIcon, PlusIcon } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -39,6 +40,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/utils/api";
+import { CloudflareTokenPermissions } from "./cloudflare-token-permissions";
 
 const providerLabels = {
 	cloudflare: "Cloudflare",
@@ -165,6 +167,9 @@ interface Props {
 export const HandleDnsProvider = ({ dnsProviderId }: Props) => {
 	const utils = api.useUtils();
 	const [isOpen, setIsOpen] = useState(false);
+	const [tokenReport, setTokenReport] = useState<CloudflareTokenReport | null>(
+		null,
+	);
 
 	const { data: provider } = api.dnsProvider.one.useQuery(
 		{ dnsProviderId: dnsProviderId || "" },
@@ -184,6 +189,12 @@ export const HandleDnsProvider = ({ dnsProviderId }: Props) => {
 	});
 
 	const providerType = form.watch("providerType");
+	const apiToken = form.watch("apiToken");
+
+	// A report only describes the token it was made with.
+	useEffect(() => {
+		setTokenReport(null);
+	}, [apiToken, providerType, isOpen]);
 
 	useEffect(() => {
 		if (provider) {
@@ -246,14 +257,29 @@ export const HandleDnsProvider = ({ dnsProviderId }: Props) => {
 			...(dnsProviderId && { dnsProviderId }),
 		})
 			.then((result) => {
-				toast.success("Connection successful");
-				if (result.tunnelAccess && !result.tunnelAccess.ok) {
-					toast.warning("Cloudflare Tunnel routes unavailable", {
-						description: result.tunnelAccess.reason,
+				const report = result.cloudflare;
+				setTokenReport(report);
+				if (!report) {
+					toast.success("Connection successful");
+					return;
+				}
+				const checks = Object.values(report);
+				if (checks.every((check) => check.status === "ok")) {
+					toast.success("All permissions granted");
+				} else if (
+					[report.token, report.zoneRead, report.dnsEdit].some(
+						(check) => check.status !== "ok",
+					)
+				) {
+					toast.error("Connection failed", {
+						description: "See the permissions in red.",
 					});
+				} else {
+					toast.warning("Connected, one permission missing");
 				}
 			})
 			.catch((err) => {
+				setTokenReport(null);
 				toast.error("Connection failed", {
 					description: extractErrorMessage(err),
 				});
@@ -361,10 +387,7 @@ export const HandleDnsProvider = ({ dnsProviderId }: Props) => {
 										<FormControl>
 											<Input type="password" {...field} />
 										</FormControl>
-										<FormDescription>
-											Create a token scoped to Zone → DNS → Edit for the zones
-											you want Dokploy to manage. Avoid the Global API Key.
-										</FormDescription>
+										<CloudflareTokenPermissions report={tokenReport} />
 										<FormMessage />
 									</FormItem>
 								)}

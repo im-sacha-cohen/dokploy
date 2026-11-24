@@ -19,10 +19,11 @@ import { getWebServerSettings } from "../../services/web-server-settings";
 import type { CloudflareConfig } from "../../utils/dns/cloudflare";
 import {
 	addCloudflareTunnelRoute,
+	CLOUDFLARE_PERMISSIONS,
 	checkCloudflareTunnelAccess,
+	explainCloudflareError,
 	getCloudflareTunnel,
 	getCloudflareZoneAccountId,
-	listCloudflareAccounts,
 	removeCloudflareTunnelRoute,
 } from "../../utils/dns/cloudflare-tunnel";
 import {
@@ -88,7 +89,7 @@ export const checkTunnelForZone = async (
 	} catch (error) {
 		return {
 			usable: false,
-			reason: error instanceof Error ? error.message : "Zone not readable",
+			reason: explainCloudflareError(error, CLOUDFLARE_PERMISSIONS.zoneRead),
 		};
 	}
 	if (tunnel.accountId && zoneAccountId !== tunnel.accountId) {
@@ -119,7 +120,7 @@ export const checkTunnelForZone = async (
 	} catch (error) {
 		return {
 			usable: false,
-			reason: `Cloudflare could not read the tunnel of this server in the zone's account: the API token needs the "Account › Cloudflare Tunnel › Edit" permission (${error instanceof Error ? error.message : "unknown error"}).`,
+			reason: `Cloudflare could not read the tunnel of this server in the zone's account. ${explainCloudflareError(error, CLOUDFLARE_PERMISSIONS.tunnelEdit)}`,
 		};
 	}
 };
@@ -136,18 +137,17 @@ export const describeTunnelForProvider = async (
 	config: CloudflareConfig,
 	tunnel: TunnelTarget,
 ): Promise<TunnelProviderStatus> => {
-	const access = await checkCloudflareTunnelAccess(config);
+	const access = await checkCloudflareTunnelAccess(config, tunnel.accountId);
 	if (!access.ok) return { usable: false, reason: access.reason };
-	const accountIds = tunnel.accountId
-		? [tunnel.accountId]
-		: (await listCloudflareAccounts(config)).map((account) => account.id);
-	for (const accountId of accountIds) {
-		const found = await getCloudflareTunnel(
-			config,
-			accountId,
-			tunnel.tunnelId,
-		).catch(() => null);
-		if (!found) continue;
+	let lastError: unknown = null;
+	for (const accountId of access.accountIds) {
+		let found: Awaited<ReturnType<typeof getCloudflareTunnel>>;
+		try {
+			found = await getCloudflareTunnel(config, accountId, tunnel.tunnelId);
+		} catch (error) {
+			lastError = error;
+			continue;
+		}
 		if (found.remote_config) {
 			return { usable: true, name: found.name, mode: "remote" };
 		}
@@ -164,7 +164,9 @@ export const describeTunnelForProvider = async (
 	return {
 		usable: false,
 		reason:
-			"This tunnel is not in the Cloudflare accounts this API token can reach.",
+			tunnel.accountId && lastError
+				? explainCloudflareError(lastError, CLOUDFLARE_PERMISSIONS.tunnelEdit)
+				: "This tunnel is not in the Cloudflare accounts this API token can reach.",
 	};
 };
 

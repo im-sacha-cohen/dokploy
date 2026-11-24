@@ -1,10 +1,4 @@
-import {
-	Check,
-	CloudCog,
-	Loader2,
-	RefreshCw,
-	TriangleAlert,
-} from "lucide-react";
+import { CloudCog, Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,21 +16,9 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { api } from "@/utils/api";
-
-const Warning = ({ children }: { children: React.ReactNode }) => (
-	<p className="flex gap-1.5 text-sm text-amber-700 dark:text-amber-300">
-		<TriangleAlert className="mt-0.5 size-4 shrink-0" />
-		<span>{children}</span>
-	</p>
-);
-
-const Ok = ({ children }: { children: React.ReactNode }) => (
-	<p className="flex gap-1.5 text-sm text-emerald-700 dark:text-emerald-300">
-		<Check className="mt-0.5 size-4 shrink-0" />
-		<span>{children}</span>
-	</p>
-);
+import { CheckRow, EditTokenLink } from "../dns/cloudflare-token-permissions";
 
 /**
  * The cloudflared connector found on a server (the Dokploy host without
@@ -53,68 +35,95 @@ export const TunnelStatus = ({ serverId }: { serverId?: string }) => {
 	const recheck = () => (refresh ? void refetch() : setRefresh(true));
 
 	const tunnel = data?.tunnel;
+	const found = tunnel?.status === "found" ? tunnel : null;
+	const providers = data?.providers ?? [];
+	const tokenBroken = providers.some((provider) => !provider.status.usable);
+	const routesOn =
+		!!found &&
+		!found.configProblem &&
+		providers.some((provider) => provider.status.usable);
+
 	return (
-		<div className="flex flex-col gap-3">
+		<div className="flex flex-col gap-1.5">
 			{isFetching && !data ? (
 				<p className="flex items-center gap-1.5 text-sm text-muted-foreground">
 					<Loader2 className="size-4 animate-spin" /> Looking for cloudflared on
 					this server…
 				</p>
 			) : !tunnel ? (
-				<p className="text-sm text-muted-foreground">
-					No cloudflared runs on this server: domains created with a DNS record
-					get an A record to the server's IP.
-				</p>
+				<CheckRow label="No cloudflared on this server: domains get an A record" />
 			) : tunnel.status === "unsupported" ? (
-				<Warning>
-					cloudflared found ({tunnel.connector}), but Dokploy cannot add routes
-					to it: {tunnel.reason} Domains get an A record instead.
-				</Warning>
+				<CheckRow
+					label={`cloudflared found (${tunnel.connector}), but Dokploy can't add routes to it`}
+					check={{ status: "error", detail: tunnel.reason }}
+				/>
 			) : (
 				<>
-					<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-						<dt className="text-muted-foreground">Connector</dt>
-						<dd>{tunnel.connector}</dd>
-						<dt className="text-muted-foreground">Tunnel</dt>
-						<dd className="break-all font-mono text-xs leading-5">
-							{tunnel.tunnelId}
-						</dd>
-						<dt className="text-muted-foreground">Configuration</dt>
-						<dd className="break-all">
-							{tunnel.configPath ??
-								"Token (managed from the Cloudflare dashboard)"}
-						</dd>
-						<dt className="text-muted-foreground">Routes point to</dt>
-						<dd className="break-all font-mono text-xs leading-5">
-							{tunnel.origin}
-						</dd>
-					</dl>
-					{tunnel.configProblem && <Warning>{tunnel.configProblem}</Warning>}
-					{data.providers.length === 0 ? (
-						<Warning>
-							Connect Cloudflare in Settings › DNS so Dokploy can add routes to
-							this tunnel.
-						</Warning>
-					) : (
-						data.providers.map((provider) =>
-							provider.status.usable ? (
-								<Ok key={provider.name}>
-									{provider.name}: new domains become routes of tunnel{" "}
-									{provider.status.name}
-									{provider.status.mode === "file"
-										? ", written to config.yml (cloudflared restarts for a few seconds)."
-										: ", through the Cloudflare API."}
-								</Ok>
-							) : (
-								<Warning key={provider.name}>
-									{provider.name}: {provider.status.reason}
-								</Warning>
-							),
-						)
+					<div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+						<p className="text-sm text-muted-foreground">
+							{tunnel.connector} · routes go to{" "}
+							<span className="font-mono text-xs">{tunnel.origin}</span>
+						</p>
+						<span
+							className={cn(
+								"rounded-md px-2.5 py-0.5 text-xs font-medium",
+								routesOn
+									? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+									: "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200",
+							)}
+						>
+							{routesOn ? "Routes on" : "Routes off"}
+						</span>
+					</div>
+					<CheckRow
+						label="cloudflared running on this server"
+						check={{
+							status: "ok",
+							detail: `Tunnel ${tunnel.tunnelId} · ${tunnel.configPath ?? "token from the Cloudflare dashboard"}`,
+						}}
+					/>
+					{tunnel.configProblem && (
+						<CheckRow
+							label="Tunnel configuration"
+							check={{ status: "error", detail: tunnel.configProblem }}
+						/>
 					)}
+					<CheckRow
+						label="Cloudflare connected in Settings › DNS"
+						check={
+							providers.length > 0
+								? { status: "ok" }
+								: {
+										status: "missing",
+										detail:
+											"Connect Cloudflare so Dokploy can add routes to this tunnel.",
+									}
+						}
+					/>
+					{providers.map((provider) => (
+						<CheckRow
+							key={provider.name}
+							label={
+								provider.status.usable
+									? `Token of ${provider.name} can edit tunnel ${provider.status.name}`
+									: `Token of ${provider.name} can edit this tunnel`
+							}
+							check={
+								provider.status.usable
+									? {
+											status: "ok",
+											detail:
+												provider.status.mode === "file"
+													? "Routes are written to config.yml, then cloudflared restarts for a few seconds."
+													: "Routes are added through the Cloudflare API.",
+										}
+									: { status: "missing", detail: provider.status.reason }
+							}
+						/>
+					))}
 				</>
 			)}
-			<div>
+			<div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
 				<Button
 					type="button"
 					variant="outline"
@@ -127,6 +136,7 @@ export const TunnelStatus = ({ serverId }: { serverId?: string }) => {
 					/>
 					Check again
 				</Button>
+				{found && tokenBroken && <EditTokenLink />}
 			</div>
 		</div>
 	);

@@ -13,7 +13,7 @@ import {
 	updateDnsProvider,
 	updateDnsProviderRecord,
 } from "@dokploy/server";
-import { checkCloudflareTunnelAccess } from "@dokploy/server/utils/dns/cloudflare-tunnel";
+import { checkCloudflareToken } from "@dokploy/server/utils/dns/cloudflare-permissions";
 import { TRPCError } from "@trpc/server";
 import { audit } from "@/server/api/utils/audit";
 import {
@@ -126,13 +126,12 @@ export const dnsProviderRouter = createTRPCRouter({
 					: provider.config;
 			}
 
+			// Cloudflare reports each permission, even when one of them fails.
+			if (config?.providerType === "cloudflare") {
+				return { cloudflare: await checkCloudflareToken(config) };
+			}
 			await testDnsProviderConnection(config!);
-			return {
-				tunnelAccess:
-					config?.providerType === "cloudflare"
-						? await checkCloudflareTunnelAccess(config)
-						: null,
-			};
+			return { cloudflare: null };
 		}),
 
 	listZones: withPermission("dnsProvider", "read")

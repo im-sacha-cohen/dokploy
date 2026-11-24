@@ -196,8 +196,8 @@ The first attempt, for G, only reported the consequence: the final diagnostic ra
 
 ## Limitations
 
-- **Compose** and **previews** are not tracked: they keep upstream behavior.
-- **Rebuilding a specific commit**: not implemented. Rebuild rebuilds the last clone, and says so. To go back to an earlier version, use Redeploy/Rollback (retained image).
+- **Previews** are not tracked: they keep upstream behavior. Compose stacks are tracked since 2026-11-24 (see below).
+- **Deploying a specific commit**: see "Deploy a commit" below. Rebuild still rebuilds the last clone, and says so.
 - **Restart**: the Swarm spec references `<app>:latest`. If `latest` was moved without updating the service, the restart launches the new image; `IMAGE_VERSION_MISMATCH` flags it.
 - **Multi-node Swarm with a registry**: the image ID is measured on the build server, and the registry digest is only available after a push.
 - **`docker image prune --all`** (Dokploy's "Clean all images" cleanup) removes retained images that are not in use. Redeploy detects this and refuses with a clear message.
@@ -217,3 +217,56 @@ Smart Deploy is available on every service type:
   - database facts: configured and running image, internal port listening, external port published.
 
 Applications additionally keep the wizard, the preflight, the timeline and commit-level version tracking. Rules and collection details: `DEPLOYMENT_DIAGNOSTICS.md`.
+
+## Deploy a commit, and compose rollbacks (2026-11-24)
+
+### Deploy a commit (applications and Git compose stacks)
+
+**Deploy a commit…** (Smart Deploy tab, `smartDeploy.deployCommit` / `smartDeploy.deployComposeCommit`, MCP `dokploy_deploy_commit`) fetches, builds and deploys one commit instead of the branch head:
+- the shallow clone is unchanged; `checkoutCommitCommand` (`utils/providers/checkout-commit.ts`) then fetches that commit alone (full SHA) or, for a short SHA or a server that refuses, the branch history, and checks it out detached;
+- the fetch reuses the clone's credentials: the token header for GitHub, GitLab and Gitea, the URL for Bitbucket, the SSH key for custom Git;
+- the input is validated (7 to 40 hexadecimal characters) by the API and again in the shell command; an unknown commit fails the deployment before any build, and the running version is untouched;
+- recorded as `kind = "deploy_commit"`, `requestedCommitSha` = the SHA typed, `builtCommitSha` = the full SHA built.
+
+The next push, webhook or "Deploy" goes back to the branch head. Raw compose stacks (file edited in Dokploy) have no commit: refused.
+
+The dialog lists the **last 30 commits of the branch** (`smartDeploy.listCommits`, `versioning/commits.ts`), newest first, with the running one marked; a click selects it, and a SHA can still be pasted. GitHub, GitLab, Gitea and Bitbucket are read through their API with the provider's credentials; a custom Git remote through a bare, blob-less clone of the last 30 commits into a temporary folder deleted on exit. If the list is unavailable, the reason is shown and the SHA field still works.
+
+In the version history, a row whose image is no longer kept offers **Rebuild commit** (fetch and build that commit again).
+
+The upstream **Deployments** tab also shows **Roll back** / **Redeploy** on each row whose image(s) are retained and that is not the running version (applications and docker-compose stacks), next to upstream's registry rollback.
+
+### Compose rollbacks without a registry (docker-compose stacks)
+
+Every compose deploy and rebuild now records (migration `0205`, column `deployment.composeImages`):
+- `kind`, branch, requested and built commit;
+- before the build, the compose file **exactly as Dokploy is about to process it** (raw content, compose-file patch, or the cloned file), in `compose/<appName>/versions/dpl-<deploymentId>.yml`;
+- after `docker compose up`, the image each service runs (`com.docker.compose.service` label → image ID), tagged `dokploy-versions/<appName>:dpl-<deploymentId>-<service>`. Pulled images (`postgres:17-alpine`, `redis:7-alpine`…) are tagged too, so a moved `latest` tag cannot change what a rollback runs.
+
+The **last 5** captured deployments keep their images and files. Older tags are removed with `docker image rm` (never forced) and their files deleted; actual tags and files are listed, so rows deleted by Dokploy's own cleanup are covered.
+
+**Roll back / Redeploy** (Smart Deploy tab → Versions, `smartDeploy.redeployComposeVersion`, MCP `dokploy_rollback_deployment`):
+1. checks that every retained tag still exists and has the recorded image ID;
+2. reapplies **today's domains** and isolation to the retained compose file (same code as a deploy), then points each service at its retained tag;
+3. writes **today's** `.env`, and runs `docker compose -p <appName> --project-directory <as a deploy> -f versions/run-<id>.yml up -d --no-build --pull never --remove-orphans`;
+4. checks that each service now runs the recorded image ID, and fails the deployment otherwise.
+
+Nothing is fetched, pulled or built. Volumes are kept. "Rollback" vs "Redeploy" compares with the version that is running, following rollbacks back to the build they ran again.
+
+The **running version** is the most recent successful deployment whose recorded images are exactly those of the running services (exited one-shot services are not counted). Otherwise it shows "Not matched".
+
+Limitations:
+- **Swarm stacks** (`composeType = stack`) and stacks with a **custom compose command**: not captured, rollback refused with the reason.
+- **Code folder**: relative bind mounts (`./config`) and the build context come from the current code folder, not from the old commit. Dokploy's `../files` mounts are unaffected.
+- **Start / Reload after a rollback** use the current compose file (upstream behavior); deploy, rebuild or roll back again to change version.
+- **Deleting a stack** removes its retained files but leaves its retained image tags; "Clean all images" removes them if unused.
+- Stacks deployed before this version have no captured version: the first deploy after the update starts the history.
+
+### Measured results (devbox, 2026-11-24)
+
+`node dev/demo-apps/rollback-commit-e2e.mjs`: **30/30** (with the commit list of a custom Git remote). Rollback clicked from the Deployments tab: previous version served.
+- **Raw compose** (web built from `dockerfile_inline` + redis): v1, v2, rollback to v1 (page and image ID of v1, compose running the retained tags), redeploy v2 (recorded as a redeploy), 4 more deploys: 10 tags left (5 deployments × 2 services), files of pruned deployments deleted. Commit deploy refused.
+- **Git compose**: head = v2, deploy of v1 from a short SHA, unknown commit fails the deployment with v1 still served, `main; id` refused by the API.
+- **Application**: head = v2, deploy of v1 from an upper-case full SHA (normalized).
+
+Unit tests: `__test__/smart-deploy/deploy-commit.test.ts`, `deploy-commit.real.test.ts` (real Git), `compose-versions.test.ts`, `commits.test.ts`. The GitHub, GitLab, Gitea and Bitbucket commit lists are not exercised locally (no provider account in the devbox).

@@ -50,7 +50,7 @@ export const updateTracking = (
  * Tracking must never break a deployment: every public function here logs and
  * swallows its own errors.
  */
-const safely = async (label: string, fn: () => Promise<void>) => {
+export const safely = async (label: string, fn: () => Promise<void>) => {
 	try {
 		await fn();
 	} catch (error) {

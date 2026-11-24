@@ -751,12 +751,25 @@ export const createDokployMcpServer = (
 		{
 			title: "Roll back to a deployment",
 			description:
-				"Runs again the exact image retained for an earlier successful deployment (last 5 builds), with the current settings.",
+				"Runs again the exact image(s) retained for an earlier successful deployment of an application or a docker-compose stack (last 5), with the current settings. Nothing is fetched or built. List candidates with dokploy_list_versions.",
 			input: z.object({ deploymentId: ID }),
 			mutation: true,
 			destructive: true,
 		},
 		async ({ deploymentId }) => {
+			const target = await findDeploymentById(deploymentId).catch(() => null);
+			if (target?.composeId) {
+				await deps.callApi(principal, "smartDeploy.redeployComposeVersion", {
+					deploymentId,
+				});
+				return json({
+					queued: true,
+					action: "rollback",
+					composeId: target.composeId,
+					sourceDeploymentId: deploymentId,
+					next: "Follow it with dokploy_list_versions or dokploy_get_deployments.",
+				});
+			}
 			const { application } = await loadDeployment(deploymentId);
 			await loadApplication(application.applicationId, {
 				deployment: ["create"],

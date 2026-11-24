@@ -19,9 +19,10 @@ export const sanitizeRepositoryUrl = (url: string): string => {
 	}
 };
 
+// Compose stacks share these columns, minus the Docker image and with a "raw"
+// source type, so the type is widened for them.
 type SourceFields = Pick<
 	Application,
-	| "sourceType"
 	| "owner"
 	| "repository"
 	| "branch"
@@ -37,8 +38,7 @@ type SourceFields = Pick<
 	| "bitbucketBranch"
 	| "customGitUrl"
 	| "customGitBranch"
-	| "dockerImage"
->;
+> & { sourceType: string; dockerImage?: string | null };
 
 export const describeSource = (app: SourceFields): SourceDescription => {
 	switch (app.sourceType) {
@@ -86,7 +86,11 @@ export const describeSource = (app: SourceFields): SourceDescription => {
 				isGit: true,
 			};
 		case "docker":
-			return { repository: app.dockerImage, branch: null, isGit: false };
+			return {
+				repository: app.dockerImage ?? null,
+				branch: null,
+				isGit: false,
+			};
 		default:
 			return { repository: null, branch: null, isGit: false };
 	}

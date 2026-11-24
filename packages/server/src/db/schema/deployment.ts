@@ -21,6 +21,7 @@ import { volumeBackups } from "./volume-backups";
 
 export type DeploymentKind =
 	| "deploy_latest"
+	| "deploy_commit"
 	| "rebuild"
 	| "redeploy"
 	| "rollback"
@@ -46,6 +47,16 @@ export interface VerificationStage {
 	status: VerificationStageStatus;
 	at?: string;
 	detail?: string;
+}
+
+/** One service of a compose deployment, as it ran once the stack was up. */
+export interface ComposeServiceImage {
+	service: string;
+	/** Image reference from the compose file, or the name compose gave a built image. */
+	image: string;
+	imageId: string;
+	/** Retained tag that can be run again, null once pruned or if tagging failed. */
+	tag: string | null;
 }
 
 export interface DeploymentVerification {
@@ -135,6 +146,7 @@ export const deployments = pgTable("deployment", {
 	taskId: text("taskId"),
 	verificationStatus: text("verificationStatus").$type<VerificationStatus>(),
 	verification: jsonb("verification").$type<DeploymentVerification>(),
+	composeImages: jsonb("composeImages").$type<ComposeServiceImage[]>(),
 });
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({

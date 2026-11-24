@@ -8,6 +8,7 @@ import {
 import type { InferResultType } from "@dokploy/server/types/with";
 import { TRPCError } from "@trpc/server";
 import { quote } from "shell-quote";
+import { checkoutCommitCommand } from "./checkout-commit";
 import { getGitTokenAuthConfig } from "./git";
 
 export const getErrorCloneRequirements = (entity: {
@@ -132,6 +133,8 @@ interface CloneGiteaRepository {
 	serverId: string | null;
 	type?: "application" | "compose";
 	outputPathOverride?: string;
+	/** Checks out this commit after the clone instead of the branch head. */
+	commitSha?: string | null;
 }
 
 export const cloneGiteaRepository = async ({
@@ -148,6 +151,7 @@ export const cloneGiteaRepository = async ({
 		enableSubmodules,
 		serverId,
 		outputPathOverride,
+		commitSha,
 	} = entity;
 	const { APPLICATIONS_PATH, COMPOSE_PATH } = paths(!!serverId);
 
@@ -178,6 +182,12 @@ export const cloneGiteaRepository = async ({
 
 	command += `echo ${quote([`Cloning Repo ${repoClone} to ${outputPath}: ✅`])};`;
 	command += `git ${getGitTokenAuthConfig(cloneUrl, giteaProvider.accessToken!)} clone --branch ${quote([String(giteaBranch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress;`;
+	command += checkoutCommitCommand({
+		outputPath,
+		commitSha,
+		gitAuth: getGitTokenAuthConfig(cloneUrl, giteaProvider.accessToken!),
+		enableSubmodules,
+	});
 	return command;
 };
 

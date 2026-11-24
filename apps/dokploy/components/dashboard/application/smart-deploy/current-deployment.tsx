@@ -1,4 +1,11 @@
-import { Loader2, RefreshCw, Rocket, RotateCcw, Undo2 } from "lucide-react";
+import {
+	GitCommitHorizontal,
+	Loader2,
+	RefreshCw,
+	Rocket,
+	RotateCcw,
+	Undo2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AlertBlock } from "@/components/shared/alert-block";
 import { DialogAction } from "@/components/shared/dialog-action";
@@ -27,9 +34,11 @@ import {
 	VerificationBadge,
 	VersionBadge,
 } from "./badges";
+import { DeployCommitDialog } from "./deploy-commit-dialog";
 
-const KIND_LABEL: Record<string, string> = {
+export const KIND_LABEL: Record<string, string> = {
 	deploy_latest: "Deploy latest",
+	deploy_commit: "Deploy commit",
 	rebuild: "Rebuild",
 	redeploy: "Redeploy",
 	rollback: "Rollback",
@@ -76,6 +85,11 @@ export const CurrentDeployment = ({
 		);
 	const restart = api.smartDeploy.restartApplication.useMutation();
 	const redeploy = api.smartDeploy.redeployVersion.useMutation();
+	const deployCommit = api.smartDeploy.deployCommit.useMutation();
+	const queueCommit = (commitSha: string) =>
+		deployCommit
+			.mutateAsync({ applicationId, commitSha })
+			.then(() => afterAction(`Deploy of ${commitSha.slice(0, 7)} queued`));
 
 	const afterAction = async (message: string) => {
 		toast.success(message);
@@ -235,6 +249,15 @@ export const CurrentDeployment = ({
 								<RotateCcw className="size-4" /> Restart
 							</Button>
 						</DialogAction>
+						{data.source.isGit && (
+							<DeployCommitDialog
+								serviceType="application"
+								serviceId={applicationId}
+								runningSha={data.runningCommitSha}
+								branch={data.source.branch}
+								onDeploy={queueCommit}
+							/>
+						)}
 					</div>
 				)}
 
@@ -312,6 +335,29 @@ export const CurrentDeployment = ({
 															{older ? "Roll back" : "Redeploy"}
 														</Button>
 													</DialogAction>
+												)}
+											{canDeploy &&
+												!d.redeployable &&
+												data.source.isGit &&
+												d.builtCommitSha &&
+												d.builtCommitSha !== data.runningCommitSha && (
+													<DeployCommitDialog
+														serviceType="application"
+														serviceId={applicationId}
+														runningSha={data.runningCommitSha}
+														branch={data.source.branch}
+														initialSha={d.builtCommitSha}
+														onDeploy={queueCommit}
+													>
+														<Button
+															variant="ghost"
+															size="sm"
+															title="Its image is no longer kept: fetch and build this commit again"
+														>
+															<GitCommitHorizontal className="size-4" />
+															Rebuild commit
+														</Button>
+													</DeployCommitDialog>
 												)}
 										</TableCell>
 									</TableRow>

@@ -1327,6 +1327,67 @@ export const registerPlatformTools = ({
 	);
 
 	tool(
+		"dokploy_list_versions",
+		"mcp:read",
+		{
+			title: "List versions",
+			description:
+				"Deployment history of an application or a compose stack with, for each deployment, the commit, the image(s) and whether it can be rolled back to (dokploy_rollback_deployment). Also says which deployment is running.",
+			input: z.object({
+				serviceType: z.enum(["application", "compose"]),
+				serviceId: ID,
+			}),
+		},
+		async ({ serviceType, serviceId }) =>
+			json(
+				serviceType === "application"
+					? await api("smartDeploy.getVersionStatus", {
+							applicationId: serviceId,
+							checkRemote: true,
+						})
+					: await api("smartDeploy.getComposeVersions", {
+							composeId: serviceId,
+						}),
+			),
+	);
+
+	tool(
+		"dokploy_deploy_commit",
+		"mcp:deploy",
+		{
+			title: "Deploy a commit",
+			description:
+				"Fetches, builds and deploys one commit (full or short SHA) of an application or a Git-based compose stack, instead of the branch head. A short SHA must be on the configured branch.",
+			input: z.object({
+				serviceType: z.enum(["application", "compose"]),
+				serviceId: ID,
+				commitSha: z.string().regex(/^[0-9a-fA-F]{7,40}$/),
+			}),
+			mutation: true,
+		},
+		async ({ serviceType, serviceId, commitSha }) => {
+			if (serviceType === "application") {
+				await api("smartDeploy.deployCommit", {
+					applicationId: serviceId,
+					commitSha,
+				});
+			} else {
+				await api("smartDeploy.deployComposeCommit", {
+					composeId: serviceId,
+					commitSha,
+				});
+			}
+			return json({
+				queued: true,
+				serviceType,
+				serviceId,
+				commitSha,
+				next: "Follow it with dokploy_get_deployments, then dokploy_list_versions.",
+			});
+		},
+	);
+
+	tool(
 		"dokploy_get_deployment_timeline",
 		"mcp:read",
 		{

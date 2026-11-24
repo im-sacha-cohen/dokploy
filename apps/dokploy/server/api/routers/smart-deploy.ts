@@ -1,7 +1,9 @@
 import {
 	applyDomainPortFix,
+	assertComposeRedeployable,
 	assertRedeployable,
 	buildTimeline,
+	describeSource,
 	diagnoseApplication,
 	diagnoseService,
 	findApplicationById,
@@ -9,7 +11,9 @@ import {
 	findDeploymentById,
 	findDomainById,
 	findProposedFix,
+	getComposeVersionStatus,
 	getVersionStatus,
+	listRemoteCommits,
 	restartApplicationService,
 	runPreflight,
 	validateFix,
@@ -23,7 +27,10 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
-import { enqueueApplicationJob } from "@/server/utils/enqueue-application-job";
+import {
+	enqueueApplicationJob,
+	enqueueComposeJob,
+} from "@/server/utils/enqueue-application-job";
 import { composeRouter } from "./compose";
 import { domainRouter } from "./domain";
 import { mariadbRouter } from "./mariadb";
@@ -82,6 +89,15 @@ const assertSameOrganization = async (
 	}
 	return application;
 };
+
+const commitShaInput = z
+	.string()
+	.trim()
+	.toLowerCase()
+	.regex(
+		/^[0-9a-f]{7,40}$/,
+		"Expected a commit SHA (7 to 40 hexadecimal characters)",
+	);
 
 const fixActionSchema = z.discriminatedUnion("kind", [
 	z.object({
@@ -417,5 +433,141 @@ export const smartDeployRouter = createTRPCRouter({
 				resourceName: application.appName,
 			});
 			return { deploymentId: deployment.deploymentId };
+		}),
+	/** The last commits of the configured branch, to pick one to deploy. */
+	listCommits: protectedProcedure
+		.input(
+			z.object({
+				serviceType: z.enum(["application", "compose"]),
+				serviceId: z.string().min(1),
+			}),
+		)
+		.query(async ({ input, ctx }) => {
+			await checkServiceAccess(ctx, input.serviceId, "read");
+			const service = await assertServiceInOrganization(
+				input.serviceType,
+				input.serviceId,
+				ctx.session.activeOrganizationId,
+			);
+			if (!("sourceType" in service)) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Not a Git service",
+				});
+			}
+			return listRemoteCommits(
+				service as Parameters<typeof listRemoteCommits>[0],
+			);
+		}),
+
+	/** Fetches, builds and deploys one commit of the application's branch. */
+	deployCommit: protectedProcedure
+		.input(
+			z.object({
+				applicationId: z.string().min(1),
+				commitSha: commitShaInput,
+			}),
+		)
+		.mutation(async ({ input, ctx }) => {
+			await checkServicePermissionAndAccess(ctx, input.applicationId, {
+				deployment: ["create"],
+			});
+			const application = await assertSameOrganization(
+				input.applicationId,
+				ctx.session.activeOrganizationId,
+			);
+			if (!describeSource(application).isGit) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Deploying a commit needs a Git source",
+				});
+			}
+			await enqueueApplicationJob(application, {
+				type: "deploy",
+				titleLog: `Deploy commit ${input.commitSha.slice(0, 7)}`,
+				commitSha: input.commitSha,
+			});
+			await audit(ctx, {
+				action: "deploy",
+				resourceType: "application",
+				resourceId: application.applicationId,
+				resourceName: application.appName,
+			});
+			return true;
+		}),
+
+	getComposeVersions: protectedProcedure
+		.input(z.object({ composeId: z.string().min(1) }))
+		.query(async ({ input, ctx }) => {
+			await checkServiceAccess(ctx, input.composeId, "read");
+			await assertServiceInOrganization(
+				"compose",
+				input.composeId,
+				ctx.session.activeOrganizationId,
+			);
+			return getComposeVersionStatus(input.composeId);
+		}),
+
+	deployComposeCommit: protectedProcedure
+		.input(
+			z.object({
+				composeId: z.string().min(1),
+				commitSha: commitShaInput,
+			}),
+		)
+		.mutation(async ({ input, ctx }) => {
+			await checkServicePermissionAndAccess(ctx, input.composeId, {
+				deployment: ["create"],
+			});
+			const compose = await assertServiceInOrganization(
+				"compose",
+				input.composeId,
+				ctx.session.activeOrganizationId,
+			);
+			if (!("composeId" in compose) || compose.sourceType === "raw") {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message:
+						"Deploying a commit needs a Git source; this stack's compose file is edited in Dokploy",
+				});
+			}
+			await enqueueComposeJob(compose, {
+				type: "deploy",
+				titleLog: `Deploy commit ${input.commitSha.slice(0, 7)}`,
+				commitSha: input.commitSha,
+			});
+			await audit(ctx, {
+				action: "deploy",
+				resourceType: "compose",
+				resourceId: compose.composeId,
+				resourceName: compose.name,
+			});
+			return true;
+		}),
+
+	/** Runs again the retained images of an earlier compose deployment. */
+	redeployComposeVersion: protectedProcedure
+		.input(z.object({ deploymentId: z.string().min(1) }))
+		.mutation(async ({ input, ctx }) => {
+			const { compose } = await assertComposeRedeployable(input.deploymentId);
+			await checkServicePermissionAndAccess(ctx, compose.composeId, {
+				deployment: ["create"],
+			});
+			await assertServiceInOrganization(
+				"compose",
+				compose.composeId,
+				ctx.session.activeOrganizationId,
+			);
+			await enqueueComposeJob(compose, {
+				type: "redeploy-version",
+				sourceDeploymentId: input.deploymentId,
+			});
+			await audit(ctx, {
+				action: "deploy",
+				resourceType: "compose",
+				resourceId: compose.composeId,
+				resourceName: compose.name,
+			});
+			return true;
 		}),
 });

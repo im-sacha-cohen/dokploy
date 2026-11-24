@@ -186,17 +186,21 @@ export const deployApplication = async ({
 	titleLog = "Manual deployment",
 	descriptionLog = "",
 	requestedCommitSha,
+	commitSha,
 }: {
 	applicationId: string;
 	titleLog: string;
 	descriptionLog: string;
 	requestedCommitSha?: string | null;
+	/** Builds this commit instead of the branch head. */
+	commitSha?: string | null;
 }) => {
 	const application = await findApplicationById(applicationId);
 	const serverId = application.buildServerId || application.serverId;
 	const applicationEntity = {
 		...application,
 		serverId: serverId,
+		commitSha,
 	};
 
 	const buildLink = `${await getDokployUrl()}/dashboard/project/${application.environment.projectId}/environment/${application.environmentId}/services/application/${application.applicationId}?tab=deployments`;
@@ -208,8 +212,8 @@ export const deployApplication = async ({
 	await trackDeploymentStart(
 		deployment.deploymentId,
 		application,
-		"deploy_latest",
-		requestedCommitSha,
+		commitSha ? "deploy_commit" : "deploy_latest",
+		commitSha ?? requestedCommitSha,
 	);
 
 	try {

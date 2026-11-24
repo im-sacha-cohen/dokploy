@@ -7,6 +7,11 @@ import {
 	cleanAppName,
 	compose,
 } from "@dokploy/server/db/schema";
+import {
+	snapshotComposeSource,
+	trackComposeArtifacts,
+	trackComposeStart,
+} from "@dokploy/server/smart-deploy/versioning/compose";
 import { getBuildComposeCommand } from "@dokploy/server/utils/builders/compose";
 import { randomizeSpecificationFile } from "@dokploy/server/utils/docker/compose";
 import {
@@ -230,11 +235,14 @@ export const deployCompose = async ({
 	titleLog = "Manual deployment",
 	descriptionLog = "",
 	freshVolumes = false,
+	commitSha,
 }: {
 	composeId: string;
 	titleLog: string;
 	descriptionLog: string;
 	freshVolumes?: boolean;
+	/** Deploys this commit instead of the branch head. */
+	commitSha?: string | null;
 }) => {
 	const compose = await findComposeById(composeId);
 
@@ -246,11 +254,18 @@ export const deployCompose = async ({
 		title: titleLog,
 		description: descriptionLog,
 	});
+	await trackComposeStart(
+		deployment.deploymentId,
+		compose,
+		commitSha ? "deploy_commit" : "deploy_latest",
+		commitSha,
+	);
 
 	try {
 		const entity = {
 			...compose,
 			type: "compose" as const,
+			commitSha,
 		};
 		let command = "set -e;";
 		if (compose.sourceType === "github") {
@@ -298,6 +313,7 @@ export const deployCompose = async ({
 			}
 		}
 
+		await snapshotComposeSource(deployment.deploymentId, compose);
 		command = "set -e;";
 		command += await getBuildComposeCommand(entity);
 		commandWithLog = `(${command}) >> ${deployment.logPath} 2>&1`;
@@ -311,6 +327,7 @@ export const deployCompose = async ({
 		await updateCompose(composeId, {
 			composeStatus: "done",
 		});
+		await trackComposeArtifacts(deployment.deploymentId, compose);
 
 		await sendBuildSuccessNotifications({
 			projectName: compose.environment.project.name,
@@ -375,6 +392,7 @@ export const rebuildCompose = async ({
 		title: titleLog,
 		description: descriptionLog,
 	});
+	await trackComposeStart(deployment.deploymentId, compose, "rebuild");
 
 	try {
 		let command = "set -e;";
@@ -414,6 +432,7 @@ export const rebuildCompose = async ({
 			}
 		}
 
+		await snapshotComposeSource(deployment.deploymentId, compose);
 		command = "set -e;";
 		command += await getBuildComposeCommand(compose);
 		commandWithLog = `(${command}) >> ${deployment.logPath} 2>&1`;
@@ -427,6 +446,7 @@ export const rebuildCompose = async ({
 		await updateCompose(composeId, {
 			composeStatus: "done",
 		});
+		await trackComposeArtifacts(deployment.deploymentId, compose);
 	} catch (error) {
 		await writeDeploymentErrorLog(deployment, compose.serverId, error);
 		await updateDeploymentStatus(deployment.deploymentId, "error");

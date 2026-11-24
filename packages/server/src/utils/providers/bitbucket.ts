@@ -12,6 +12,7 @@ import type { InferResultType } from "@dokploy/server/types/with";
 import { TRPCError } from "@trpc/server";
 import { quote } from "shell-quote";
 import type { z } from "zod";
+import { checkoutCommitCommand } from "./checkout-commit";
 
 export type ApplicationWithBitbucket = InferResultType<
 	"applications",
@@ -89,6 +90,8 @@ interface CloneBitbucketRepository {
 	serverId: string | null;
 	type?: "application" | "compose";
 	outputPathOverride?: string;
+	/** Checks out this commit after the clone instead of the branch head. */
+	commitSha?: string | null;
 }
 
 export const cloneBitbucketRepository = async ({
@@ -105,6 +108,7 @@ export const cloneBitbucketRepository = async ({
 		enableSubmodules,
 		serverId,
 		outputPathOverride,
+		commitSha,
 	} = entity;
 	const { COMPOSE_PATH, APPLICATIONS_PATH } = paths(!!serverId);
 
@@ -127,6 +131,11 @@ export const cloneBitbucketRepository = async ({
 	const cloneUrl = getBitbucketCloneUrl(bitbucket, repoclone);
 	command += `echo ${quote([`Cloning Repo ${repoclone} to ${outputPath}: ✅`])};`;
 	command += `git clone --branch ${quote([String(bitbucketBranch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress;`;
+	command += checkoutCommitCommand({
+		outputPath,
+		commitSha,
+		enableSubmodules,
+	});
 	return command;
 };
 

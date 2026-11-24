@@ -141,6 +141,7 @@ export * from "./utils/process/execAsync";
 export * from "./utils/process/remoteStream";
 export * from "./utils/process/spawnAsync";
 export * from "./utils/providers/bitbucket";
+export * from "./utils/providers/checkout-commit";
 export * from "./utils/providers/docker";
 export * from "./utils/providers/git";
 export * from "./utils/providers/gitea";

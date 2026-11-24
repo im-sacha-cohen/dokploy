@@ -10,6 +10,7 @@ import type { InferResultType } from "@dokploy/server/types/with";
 import { TRPCError } from "@trpc/server";
 import { quote } from "shell-quote";
 import type { z } from "zod";
+import { checkoutCommitCommand } from "./checkout-commit";
 import { getGitTokenAuthConfig } from "./git";
 
 const refreshGitlabTokenIfExpired = async (gitlabProviderId: string) => {
@@ -132,6 +133,8 @@ interface CloneGitlabRepository {
 	serverId: string | null;
 	type?: "application" | "compose";
 	outputPathOverride?: string;
+	/** Checks out this commit after the clone instead of the branch head. */
+	commitSha?: string | null;
 }
 
 export const cloneGitlabRepository = async ({
@@ -147,6 +150,7 @@ export const cloneGitlabRepository = async ({
 		enableSubmodules,
 		serverId,
 		outputPathOverride,
+		commitSha,
 	} = entity;
 	const { COMPOSE_PATH, APPLICATIONS_PATH } = paths(!!serverId);
 
@@ -174,6 +178,12 @@ export const cloneGitlabRepository = async ({
 	const cloneUrl = getGitlabCloneUrl(gitlab, repoClone);
 	command += `echo ${quote([`Cloning Repo ${repoClone} to ${outputPath}: ✅`])};`;
 	command += `git ${getGitTokenAuthConfig(cloneUrl, String(gitlab?.accessToken))} clone --branch ${quote([String(gitlabBranch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress;`;
+	command += checkoutCommitCommand({
+		outputPath,
+		commitSha,
+		gitAuth: getGitTokenAuthConfig(cloneUrl, String(gitlab?.accessToken)),
+		enableSubmodules,
+	});
 	return command;
 };
 

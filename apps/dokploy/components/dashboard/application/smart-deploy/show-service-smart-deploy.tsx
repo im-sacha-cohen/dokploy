@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { ConfidenceBadge, LiveStatusBadge, SeverityBadge } from "./badges";
+import { ComposeVersions } from "./compose-versions";
 import { ago, ChainHops } from "./network-chain";
 import { isServiceFix, ServiceFixButton } from "./service-fix-button";
 import {
@@ -334,6 +335,8 @@ export const ShowServiceSmartDeploy = ({
 					</CardContent>
 				</Card>
 			)}
+
+			{serviceType === "compose" && <ComposeVersions composeId={serviceId} />}
 
 			{report?.facts.services && (
 				<Card className="bg-background">

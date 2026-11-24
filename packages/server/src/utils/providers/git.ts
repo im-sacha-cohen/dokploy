@@ -6,6 +6,7 @@ import {
 } from "@dokploy/server/services/ssh-key";
 import { quote } from "shell-quote";
 import { execAsync, execAsyncRemote } from "../process/execAsync";
+import { checkoutCommitCommand } from "./checkout-commit";
 
 interface CloneGitRepository {
 	appName: string;
@@ -16,6 +17,8 @@ interface CloneGitRepository {
 	serverId: string | null;
 	type?: "application" | "compose";
 	outputPathOverride?: string;
+	/** Checks out this commit after the clone instead of the branch head. */
+	commitSha?: string | null;
 }
 
 // Header auth keeps the token out of build logs.
@@ -37,6 +40,7 @@ export const cloneGitRepository = async ({
 		enableSubmodules,
 		serverId,
 		outputPathOverride,
+		commitSha,
 	} = entity;
 	const { SSH_PATH, COMPOSE_PATH, APPLICATIONS_PATH } = paths(!!serverId);
 
@@ -91,6 +95,11 @@ export const cloneGitRepository = async ({
 			fi
 			`;
 
+	command += checkoutCommitCommand({
+		outputPath,
+		commitSha,
+		enableSubmodules,
+	});
 	return command;
 };
 

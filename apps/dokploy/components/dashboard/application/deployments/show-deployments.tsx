@@ -28,6 +28,7 @@ import {
 import { api, type RouterOutputs } from "@/utils/api";
 import { ShowRollbackSettings } from "../rollbacks/show-rollback-settings";
 import { DeploymentOutcomeBadge } from "../smart-deploy/badges";
+import { VersionRollbackButton } from "../smart-deploy/version-rollback-button";
 import { CancelQueues } from "./cancel-queues";
 import { ClearDeployments } from "./clear-deployments";
 import { KillBuild } from "./kill-build";
@@ -505,6 +506,14 @@ export const ShowDeployments = ({
 															Rollback
 														</Button>
 													</DialogAction>
+												)}
+											{(type === "application" || type === "compose") &&
+												deployment.status === "done" && (
+													<VersionRollbackButton
+														type={type}
+														serviceId={id}
+														deploymentId={deployment.deploymentId}
+													/>
 												)}
 										</div>
 									</div>

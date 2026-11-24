@@ -8,6 +8,7 @@ import { TRPCError } from "@trpc/server";
 import { Octokit } from "octokit";
 import { quote } from "shell-quote";
 import type { z } from "zod";
+import { checkoutCommitCommand } from "./checkout-commit";
 import { getGitTokenAuthConfig } from "./git";
 
 export const DEFAULT_GITHUB_URL = "https://github.com";
@@ -188,6 +189,8 @@ interface CloneGithubRepository {
 	enableSubmodules: boolean;
 	serverId: string | null;
 	outputPathOverride?: string;
+	/** Checks out this commit after the clone instead of the branch head. */
+	commitSha?: string | null;
 }
 export const cloneGithubRepository = async ({
 	type = "application",
@@ -204,6 +207,7 @@ export const cloneGithubRepository = async ({
 		enableSubmodules,
 		serverId,
 		outputPathOverride,
+		commitSha,
 	} = entity;
 	const { APPLICATIONS_PATH, COMPOSE_PATH } = paths(!!serverId);
 
@@ -235,6 +239,12 @@ export const cloneGithubRepository = async ({
 	command += `echo ${quote([`Cloning Repo ${repoclone} to ${outputPath}: ✅`])};`;
 	command += `git ${getGitTokenAuthConfig(cloneUrl, token)} clone --branch ${quote([String(branch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress;`;
 
+	command += checkoutCommitCommand({
+		outputPath,
+		commitSha,
+		gitAuth: getGitTokenAuthConfig(cloneUrl, token),
+		enableSubmodules,
+	});
 	return command;
 };
 

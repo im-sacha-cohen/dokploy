@@ -107,6 +107,12 @@ export const MCP_API_PATHS = [
 	"smartDeploy.applyFix",
 	"smartDeploy.diagnoseService",
 	"smartDeploy.applyServiceFix",
+	"smartDeploy.getVersionStatus",
+	"smartDeploy.getComposeVersions",
+	"smartDeploy.listCommits",
+	"smartDeploy.deployCommit",
+	"smartDeploy.deployComposeCommit",
+	"smartDeploy.redeployComposeVersion",
 ] as const;
 
 export type McpApiPath = (typeof MCP_API_PATHS)[number];

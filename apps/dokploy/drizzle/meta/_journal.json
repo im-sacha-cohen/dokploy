@@ -1436,6 +1436,13 @@
       "when": 1795438353373,
       "tag": "0204_smart_deploy_tunnel",
       "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1795519004428,
+      "tag": "0205_smart_deploy_compose_versions",
+      "breakpoints": true
     }
   ]
 }

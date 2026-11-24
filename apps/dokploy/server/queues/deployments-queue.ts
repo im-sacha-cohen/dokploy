@@ -5,6 +5,7 @@ import {
 	rebuildApplication,
 	rebuildCompose,
 	rebuildPreviewApplication,
+	redeployComposeVersion,
 	redeployDeploymentVersion,
 	resolveRequestedCommit,
 	updateApplicationStatus,
@@ -33,9 +34,10 @@ export const processDeploymentJob = async (job: InMemoryJob) => {
 					applicationId: job.data.applicationId,
 					titleLog: job.data.titleLog,
 					descriptionLog: job.data.descriptionLog,
-					requestedCommitSha: await resolveRequestedCommit(
-						job.data.applicationId,
-					),
+					commitSha: job.data.commitSha,
+					requestedCommitSha: job.data.commitSha
+						? null
+						: await resolveRequestedCommit(job.data.applicationId),
 				});
 			} else if (
 				job.data.type === "redeploy-version" &&
@@ -55,6 +57,7 @@ export const processDeploymentJob = async (job: InMemoryJob) => {
 					titleLog: job.data.titleLog,
 					descriptionLog: job.data.descriptionLog,
 					freshVolumes: job.data.freshVolumes,
+					commitSha: job.data.commitSha,
 				});
 			} else if (job.data.type === "redeploy") {
 				await rebuildCompose({
@@ -62,6 +65,13 @@ export const processDeploymentJob = async (job: InMemoryJob) => {
 					titleLog: job.data.titleLog,
 					descriptionLog: job.data.descriptionLog,
 					freshVolumes: job.data.freshVolumes,
+				});
+			} else if (
+				job.data.type === "redeploy-version" &&
+				job.data.sourceDeploymentId
+			) {
+				await redeployComposeVersion({
+					sourceDeploymentId: job.data.sourceDeploymentId,
 				});
 			}
 		} else if (job.data.applicationType === "application-preview") {

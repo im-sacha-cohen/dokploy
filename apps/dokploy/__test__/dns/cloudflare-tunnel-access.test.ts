@@ -163,3 +163,14 @@ describe("checkCloudflareToken", () => {
 		expect(report.tunnelEdit.status).toBe("skipped");
 	});
 });
+
+describe("checkCloudflareToken after a Cloudflare outage", () => {
+	it("does not call the tunnel permission missing", async () => {
+		route({
+			"/zones?": () => fail(500, 1001, "Unexpected error occurred"),
+		});
+		const report = await checkCloudflareToken(config);
+		expect(report.zoneRead.status).toBe("error");
+		expect(report.tunnelEdit.status).toBe("skipped");
+	});
+});

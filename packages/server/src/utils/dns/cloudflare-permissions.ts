@@ -75,7 +75,11 @@ export const checkCloudflareToken = async (
 			token: { status: "ok" },
 			zoneRead: failed(error, CLOUDFLARE_PERMISSIONS.zoneRead),
 			dnsEdit: SKIPPED,
-			tunnelEdit: await checkTunnelEdit(config, []),
+			// Without the zones, the tunnel's account is unknown: only a refused
+			// zone listing says anything about the token's other permissions.
+			tunnelEdit: isRefusal(error)
+				? await checkTunnelEdit(config, [])
+				: SKIPPED,
 		};
 	}
 

@@ -61,6 +61,7 @@ import { swarmRouter } from "./routers/swarm";
 import { tagRouter } from "./routers/tag";
 import { telemetryProviderRouter } from "./routers/telemetry-provider";
 import { transferRouter } from "./routers/transfer";
+import { updatePolicyRouter } from "./routers/update-policy";
 import { userRouter } from "./routers/user";
 import { vaultProviderRouter } from "./routers/vault-provider";
 import { volumeBackupsRouter } from "./routers/volume-backups";
@@ -132,6 +133,7 @@ export const appRouter = createTRPCRouter({
 	overview: overviewRouter,
 	transfer: transferRouter,
 	smartDeploy: smartDeployRouter,
+	updatePolicy: updatePolicyRouter,
 	domainDns: domainDnsRouter,
 	mcp: mcpRouter,
 	sandbox: sandboxRouter,

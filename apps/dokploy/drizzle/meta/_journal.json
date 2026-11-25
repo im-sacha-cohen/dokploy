@@ -1443,6 +1443,13 @@
       "when": 1795519004428,
       "tag": "0205_smart_deploy_compose_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1795602337007,
+      "tag": "0206_auto_update",
+      "breakpoints": true
     }
   ]
 }

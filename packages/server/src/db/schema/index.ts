@@ -2,6 +2,7 @@ export * from "./account";
 export * from "./ai";
 export * from "./application";
 export * from "./audit-log";
+export * from "./auto-update";
 export * from "./backups";
 export * from "./bitbucket";
 export * from "./certificate";

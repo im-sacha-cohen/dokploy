@@ -7,6 +7,7 @@ import { ShowBackups } from "@/components/dashboard/database/backups/show-backup
 import { TunnelStatusCard } from "@/components/dashboard/settings/servers/tunnel-status";
 import { WebDomain } from "@/components/dashboard/settings/web-domain";
 import { WebServer } from "@/components/dashboard/settings/web-server";
+import { DokployAutoUpdate } from "@/components/dashboard/settings/web-server/dokploy-auto-update";
 import { DashboardLayout } from "@/components/layouts/dashboard-layout";
 import { Card } from "@/components/ui/card";
 import { appRouter } from "@/server/api/root";
@@ -19,6 +20,7 @@ const Page = () => {
 			<div className="h-full rounded-xl  max-w-5xl mx-auto flex flex-col gap-4">
 				<WebDomain />
 				<WebServer />
+				<DokployAutoUpdate />
 				<TunnelStatusCard />
 				<div className="w-full flex flex-col gap-4">
 					<Card className="h-full bg-sidebar  p-2.5 rounded-xl  mx-auto w-full">

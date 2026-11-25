@@ -59,6 +59,12 @@ import {
 	writeTraefikConfigInPath,
 	writeTraefikSetup,
 } from "@dokploy/server";
+import { serviceImage } from "@dokploy/server/auto-update/dokploy-check";
+import {
+	imageHasUpdater,
+	isDokployUpdateBusy,
+	startDokployUpdater,
+} from "@dokploy/server/auto-update/dokploy-updater";
 import { db } from "@dokploy/server/db";
 import { checkPermission } from "@dokploy/server/services/permission";
 import { generateOpenApiDocument } from "@dokploy/trpc-openapi";
@@ -642,14 +648,34 @@ export const settingsRouter = createTRPCRouter({
 
 		const data = await getUpdateData(packageInfo.version);
 		if (data.updateAvailable) {
-			void spawnAsync("docker", [
-				"service",
-				"update",
-				"--force",
-				"--image",
-				`${getDokployImage()}:${data.latestVersion}`,
-				"dokploy",
-			]);
+			if (await isDokployUpdateBusy()) {
+				throw new TRPCError({
+					code: "CONFLICT",
+					message:
+						"A Dokploy update is running or waits to be resumed (Settings › Web Server).",
+				});
+			}
+			const target = `${getDokployImage()}:${data.latestVersion}`;
+			const currentImage = await serviceImage();
+			// Through the updater when the running image has it: backups first,
+			// and everything put back if the new version does not stay healthy.
+			if (await imageHasUpdater(currentImage)) {
+				await startDokployUpdater({
+					currentImage,
+					args: ["--target", target],
+					kind: "update",
+					toImage: target,
+				});
+			} else {
+				void spawnAsync("docker", [
+					"service",
+					"update",
+					"--force",
+					"--image",
+					target,
+					"dokploy",
+				]);
+			}
 			await audit(ctx, {
 				action: "update",
 				resourceType: "settings",

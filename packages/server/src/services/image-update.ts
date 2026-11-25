@@ -55,23 +55,34 @@ const parseBearerChallenge = (header: string | null) => {
 	return params.realm ? params : null;
 };
 
+export interface RegistryCredentials {
+	username: string;
+	password: string;
+}
+
+const basic = (credentials: RegistryCredentials) =>
+	`Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`;
+
 /**
- * Anonymous registry client: public images only, which is how a fork is
- * meant to be published. A private image answers 401 and the check gives up.
+ * Registry client: anonymous by default, which is how a fork is meant to be
+ * published; with credentials for a private application image. `path` is
+ * relative to the repository, or absolute (`/v2/…`) for pagination links.
  */
 const registryFetch = async (
 	ref: ImageReference,
 	path: string,
 	accept?: string,
+	credentials?: RegistryCredentials,
 ) => {
-	const url = `https://${ref.registry}/v2/${ref.repository}/${path}`;
+	const url = path.startsWith("/v2/")
+		? `https://${ref.registry}${path}`
+		: `https://${ref.registry}/v2/${ref.repository}/${path}`;
 	const headers: Record<string, string> = accept ? { accept } : {};
 	const signal = AbortSignal.timeout(15_000);
 	let response = await fetch(url, { headers, signal });
+	const authenticate = response.headers.get("www-authenticate") ?? "";
 	const challenge =
-		response.status === 401
-			? parseBearerChallenge(response.headers.get("www-authenticate"))
-			: null;
+		response.status === 401 ? parseBearerChallenge(authenticate) : null;
 	if (challenge) {
 		const tokenUrl = new URL(challenge.realm as string);
 		if (challenge.service) {
@@ -81,7 +92,10 @@ const registryFetch = async (
 			"scope",
 			challenge.scope ?? `repository:${ref.repository}:pull`,
 		);
-		const tokenResponse = await fetch(tokenUrl, { signal });
+		const tokenResponse = await fetch(tokenUrl, {
+			headers: credentials ? { authorization: basic(credentials) } : {},
+			signal,
+		});
 		if (tokenResponse.ok) {
 			const { token, access_token } = (await tokenResponse.json()) as {
 				token?: string;
@@ -95,11 +109,40 @@ const registryFetch = async (
 				signal,
 			});
 		}
+	} else if (
+		response.status === 401 &&
+		credentials &&
+		authenticate.toLowerCase().startsWith("basic")
+	) {
+		response = await fetch(url, {
+			headers: { ...headers, authorization: basic(credentials) },
+			signal,
+		});
 	}
 	if (!response.ok) {
 		throw new Error(`${ref.registry} answered ${response.status} for ${path}`);
 	}
 	return response;
+};
+
+/** Every tag of the image's repository, following pagination. */
+export const listRegistryTags = async (
+	image: string,
+	credentials?: RegistryCredentials,
+) => {
+	const ref = parseImageReference(image);
+	const tags: string[] = [];
+	let path: string | null = "tags/list?n=1000";
+	for (let page = 0; path && page < 20; page++) {
+		const response = await registryFetch(ref, path, undefined, credentials);
+		const body = (await response.json()) as { tags?: string[] | null };
+		tags.push(...(body.tags ?? []));
+		const next = response.headers
+			.get("link")
+			?.match(/<([^>]+)>;\s*rel="?next"?/);
+		path = next?.[1] ?? null;
+	}
+	return tags;
 };
 
 const NODE_ARCH: Record<string, string> = { x64: "amd64", arm64: "arm64" };
@@ -115,12 +158,14 @@ export interface RegistryImageInfo {
 
 export const getRegistryImageInfo = async (
 	image: string,
+	credentials?: RegistryCredentials,
 ): Promise<RegistryImageInfo> => {
 	const ref = parseImageReference(image);
 	const response = await registryFetch(
 		ref,
 		`manifests/${ref.reference}`,
 		MANIFEST_TYPES,
+		credentials,
 	);
 	const digest =
 		response.headers.get("docker-content-digest") ??
@@ -147,12 +192,22 @@ export const getRegistryImageInfo = async (
 				manifest.manifests[0];
 			if (!entry) return bare;
 			manifest = await (
-				await registryFetch(ref, `manifests/${entry.digest}`, MANIFEST_TYPES)
+				await registryFetch(
+					ref,
+					`manifests/${entry.digest}`,
+					MANIFEST_TYPES,
+					credentials,
+				)
 			).json();
 		}
 		if (!manifest.config) return bare;
 		const config = (await (
-			await registryFetch(ref, `blobs/${manifest.config.digest}`)
+			await registryFetch(
+				ref,
+				`blobs/${manifest.config.digest}`,
+				undefined,
+				credentials,
+			)
 		).json()) as {
 			created?: string;
 			config?: { Labels?: Record<string, string> };

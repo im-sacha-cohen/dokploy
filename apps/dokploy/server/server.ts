@@ -87,6 +87,33 @@ void app.prepare().then(async () => {
 					return (await myQueue.getJobs()).length;
 				},
 			});
+			const { initAppAutoUpdates } = await import(
+				"@dokploy/server/auto-update/app-runner"
+			);
+			await initAppAutoUpdates({
+				enqueueDeploy: async ({ applicationId, serverId }, title) => {
+					const { myQueue } = await import("./queues/queueSetup");
+					await myQueue.add(
+						"deployments",
+						{
+							applicationId,
+							titleLog: title,
+							descriptionLog: "Scheduled update",
+							type: "deploy",
+							applicationType: "application",
+							server: !!serverId,
+							serverId: serverId ?? undefined,
+						},
+						{ removeOnComplete: true, removeOnFail: true },
+					);
+				},
+				pendingJobs: async (applicationId) => {
+					const { getJobsByApplicationId } = await import(
+						"./queues/queueSetup"
+					);
+					return (await getJobsByApplicationId(applicationId)).length;
+				},
+			});
 		}
 		await initEnterpriseBackupCronJobs();
 		if (IS_CLOUD) {

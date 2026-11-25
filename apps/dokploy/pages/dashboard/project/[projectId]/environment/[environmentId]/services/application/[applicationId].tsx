@@ -12,6 +12,7 @@ import { useRouter } from "next/router";
 import { type ReactElement, useEffect, useState } from "react";
 import { toast } from "sonner";
 import superjson from "superjson";
+import { ShowAutoUpdate } from "@/components/dashboard/application/advanced/auto-update/show-auto-update";
 import { ShowClusterSettings } from "@/components/dashboard/application/advanced/cluster/show-cluster-settings";
 import { AddCommand } from "@/components/dashboard/application/advanced/general/add-command";
 import { ShowPorts } from "@/components/dashboard/application/advanced/ports/show-port";
@@ -456,6 +457,9 @@ const Service = (
 												<ShowSecurity applicationId={applicationId} />
 												<ShowPorts applicationId={applicationId} />
 												<ShowTraefikConfig applicationId={applicationId} />
+												{!isCloud && (
+													<ShowAutoUpdate applicationId={applicationId} />
+												)}
 											</div>
 										</TabsContent>
 									)}

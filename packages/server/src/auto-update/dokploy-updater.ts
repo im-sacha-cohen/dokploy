@@ -1,6 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { paths } from "../constants";
 import { db } from "../db";
 import { type UpdateRun, updateRun } from "../db/schema/auto-update";
@@ -96,6 +97,10 @@ export const imageHasUpdater = async (image: string) => {
 		return false;
 	}
 };
+
+/** Same shape as the script's own run ids: sortable by start time. */
+const newUpdaterRunId = () =>
+	`${new Date().toISOString().replace(/[-:]|\.\d+/g, "")}-${nanoid(6)}`;
 
 /** Starts the updater from `image`, which must be one that works now. */
 export const launchUpdater = async (image: string, args: string[]) => {
@@ -281,4 +286,113 @@ export const resumeDokployUpdate = async (currentImage: string) => {
 			.where(eq(updateRun.updateRunId, run.updateRunId));
 	}
 	void watchDokployUpdater();
+};
+
+/**
+ * Records a run, then starts the updater for it from `currentImage`. The
+ * row is written first so that the updater's database backup holds it:
+ * after a restore, startup finds it and records the outcome there.
+ */
+export const startDokployUpdater = async ({
+	currentImage,
+	args,
+	kind,
+	toImage,
+	updatePolicyId = null,
+}: {
+	currentImage: string;
+	args: string[];
+	kind: UpdateRun["kind"];
+	toImage: string;
+	updatePolicyId?: string | null;
+}) => {
+	const updaterRunId = newUpdaterRunId();
+	const [run] = await db
+		.insert(updateRun)
+		.values({
+			updatePolicyId,
+			targetType: "dokploy",
+			kind,
+			status: "backing_up",
+			fromImage: currentImage,
+			toImage,
+			updaterRunId,
+		})
+		.returning();
+	try {
+		await launchUpdater(currentImage, [...args, "--run-id", updaterRunId]);
+	} catch (error) {
+		if (run) {
+			const [updated] = await db
+				.update(updateRun)
+				.set({
+					status: "aborted",
+					reason: `The updater did not start: ${error}`,
+					finishedAt: new Date().toISOString(),
+				})
+				.where(eq(updateRun.updateRunId, run.updateRunId))
+				.returning();
+			if (updated) await notifyDokployRun(updated);
+		}
+		throw error;
+	}
+	void watchDokployUpdater();
+	return run;
+};
+
+const hasBackup = async (updaterRunId: string) => {
+	try {
+		await access(path.join(updatesDir(), "runs", updaterRunId, "dokploy.sql"));
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+/** Successful updates whose saved state is still on disk (the last runs). */
+export const findRollbackableRuns = async () => {
+	const runs = await db.query.updateRun.findMany({
+		where: and(
+			eq(updateRun.targetType, "dokploy"),
+			eq(updateRun.kind, "update"),
+			eq(updateRun.status, "succeeded"),
+		),
+		orderBy: desc(updateRun.startedAt),
+		limit: 10,
+	});
+	const kept = await Promise.all(
+		runs.map(async (run) =>
+			run.updaterRunId && (await hasBackup(run.updaterRunId)) ? run : null,
+		),
+	);
+	return kept.filter((run): run is UpdateRun => run !== null);
+};
+
+/**
+ * Puts back Dokploy as it was before a successful update: its image, its
+ * configuration and its database, so changes made in the panel since that
+ * update are lost. The updater saves the current state first.
+ */
+export const rollbackDokployTo = async (
+	updaterRunId: string,
+	currentImage: string,
+) => {
+	if (await isDokployUpdateBusy()) {
+		throw new Error("A Dokploy update is running or waits to be resumed.");
+	}
+	const run = (await findRollbackableRuns()).find(
+		(r) => r.updaterRunId === updaterRunId,
+	);
+	if (!run) {
+		throw new Error("This update cannot be rolled back: its backup is gone.");
+	}
+	if (!(await imageHasUpdater(currentImage))) {
+		throw new Error("The running image has no updater.");
+	}
+	return startDokployUpdater({
+		currentImage,
+		args: ["--rollback", updaterRunId],
+		kind: "rollback",
+		toImage: run.fromImage ?? "",
+	});
 };

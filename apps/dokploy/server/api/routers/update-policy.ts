@@ -1,23 +1,31 @@
 import { IS_CLOUD } from "@dokploy/server";
+import {
+	runAppWindow,
+	scheduleAppAutoUpdate,
+} from "@dokploy/server/auto-update/app-runner";
 import { serviceImage } from "@dokploy/server/auto-update/dokploy-check";
 import {
 	runDokployWindow,
 	scheduleDokployAutoUpdate,
 } from "@dokploy/server/auto-update/dokploy-runner";
 import {
+	findRollbackableRuns,
 	isUpdaterRunning,
 	readUpdaterState,
 	resumeDokployUpdate,
+	rollbackDokployTo,
 } from "@dokploy/server/auto-update/dokploy-updater";
 import {
 	currentOrNextOccurrence,
 	DOKPLOY_UPDATE_MARGIN_MINUTES,
 } from "@dokploy/server/auto-update/window";
 import type { UpdatePolicy } from "@dokploy/server/db/schema";
+import { findApplicationById } from "@dokploy/server/services/application";
 import { checkServicePermissionAndAccess } from "@dokploy/server/services/permission";
 import {
 	findApplicationUpdatePolicy,
 	findDokployUpdatePolicy,
+	listEnvironmentBackups,
 	listUpdateRuns,
 	policyWindow,
 	saveApplicationUpdatePolicy,
@@ -59,6 +67,14 @@ export const updatePolicyRouter = createTRPCRouter({
 				state: await readUpdaterState().catch(() => null),
 				running: await isUpdaterRunning().catch(() => false),
 			},
+			rollbackable: (await findRollbackableRuns().catch(() => [])).map(
+				(run) => ({
+					updaterRunId: run.updaterRunId as string,
+					startedAt: run.startedAt,
+					fromImage: run.fromImage,
+					toImage: run.toImage,
+				}),
+			),
 		};
 	}),
 
@@ -98,6 +114,27 @@ export const updatePolicyRouter = createTRPCRouter({
 		return true;
 	}),
 
+	rollbackDokploy: adminProcedure
+		.input(z.object({ updaterRunId: z.string().regex(/^[\w-]+$/) }))
+		.mutation(async ({ ctx, input }) => {
+			assertSelfHosted();
+			try {
+				await rollbackDokployTo(input.updaterRunId, await serviceImage());
+			} catch (error) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: error instanceof Error ? error.message : String(error),
+				});
+			}
+			await audit(ctx, {
+				action: "restore",
+				resourceType: "settings",
+				resourceName: "dokploy-version",
+				metadata: { updaterRunId: input.updaterRunId },
+			});
+			return true;
+		}),
+
 	getForApplication: protectedProcedure
 		.input(applicationInput)
 		.query(async ({ ctx, input }) => {
@@ -106,7 +143,13 @@ export const updatePolicyRouter = createTRPCRouter({
 				deployment: ["read"],
 			});
 			const dokploy = await findDokployUpdatePolicy();
+			const application = await findApplicationById(input.applicationId);
 			return {
+				sourceType: application.sourceType,
+				dockerImage: application.dockerImage,
+				backupOptions: (
+					await listEnvironmentBackups(application.environmentId)
+				).map(({ backupId, label }) => ({ backupId, label })),
 				policy: withNextWindow(
 					await findApplicationUpdatePolicy(input.applicationId),
 				),
@@ -126,6 +169,23 @@ export const updatePolicyRouter = createTRPCRouter({
 			await checkServicePermissionAndAccess(ctx, input.applicationId, {
 				deployment: ["create"],
 			});
+			if (input.settings.backupIds.length > 0) {
+				const application = await findApplicationById(input.applicationId);
+				const options = await listEnvironmentBackups(application.environmentId);
+				for (const backupId of input.settings.backupIds) {
+					const option = options.find((o) => o.backupId === backupId);
+					if (!option) {
+						throw new TRPCError({
+							code: "BAD_REQUEST",
+							message:
+								"Backups to run first must belong to this application's environment.",
+						});
+					}
+					await checkServicePermissionAndAccess(ctx, option.serviceId, {
+						backup: ["create"],
+					});
+				}
+			}
 			const policy = await saveApplicationUpdatePolicy(
 				input.applicationId,
 				ctx.session.activeOrganizationId,
@@ -138,6 +198,8 @@ export const updatePolicyRouter = createTRPCRouter({
 				resourceName: "update-policy",
 				metadata: { enabled: policy.enabled, mode: policy.mode },
 			});
+			scheduleAppAutoUpdate(policy);
+			void runAppWindow(policy.updatePolicyId);
 			return withNextWindow(policy);
 		}),
 });

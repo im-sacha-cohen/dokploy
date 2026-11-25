@@ -4,6 +4,11 @@ const mockGetDockerResourceType = vi.hoisted(() => vi.fn());
 const mockSpawnAsync = vi.hoisted(() => vi.fn());
 const mockGetUpdateData = vi.hoisted(() => vi.fn());
 const mockGetDokployImage = vi.hoisted(() => vi.fn(() => "dokploy/dokploy"));
+const updater = vi.hoisted(() => ({
+	busy: vi.fn(async () => false),
+	hasUpdater: vi.fn(async () => false),
+	start: vi.fn(async () => ({})),
+}));
 
 const noop = vi.fn();
 
@@ -63,6 +68,16 @@ vi.mock("@dokploy/server", () => ({
 	writeTraefikSetup: noop,
 }));
 
+vi.mock("@dokploy/server/auto-update/dokploy-check", () => ({
+	serviceImage: vi.fn(async () => "dokploy/dokploy:v1.0.0@sha256:old"),
+}));
+
+vi.mock("@dokploy/server/auto-update/dokploy-updater", () => ({
+	isDokployUpdateBusy: updater.busy,
+	imageHasUpdater: updater.hasUpdater,
+	startDokployUpdater: updater.start,
+}));
+
 vi.mock("@dokploy/server/lib/auth", () => ({
 	validateRequest: vi.fn(),
 }));
@@ -94,6 +109,8 @@ const caller = settingsRouter.createCaller({
 describe("settings.updateServer", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		updater.busy.mockResolvedValue(false);
+		updater.hasUpdater.mockResolvedValue(false);
 	});
 
 	it("fails with a clear error when no dokploy docker resource exists", async () => {
@@ -163,5 +180,40 @@ describe("settings.updateServer", () => {
 		const args = mockSpawnAsync.mock.calls[0]?.[1] as string[];
 		expect(args).toContain("ghcr.io/me/dokploy:smart-deploy");
 		expect(args.join(" ")).not.toContain("dokploy/dokploy");
+	});
+
+	it("goes through the updater when the running image has it", async () => {
+		mockGetDockerResourceType.mockResolvedValue("service");
+		mockGetDokployImage.mockReturnValue("ghcr.io/me/dokploy");
+		mockGetUpdateData.mockResolvedValue({
+			latestVersion: "smart-deploy",
+			updateAvailable: true,
+		});
+		updater.hasUpdater.mockResolvedValue(true);
+
+		await expect(caller.updateServer()).resolves.toBe(true);
+
+		expect(updater.start).toHaveBeenCalledWith({
+			currentImage: "dokploy/dokploy:v1.0.0@sha256:old",
+			args: ["--target", "ghcr.io/me/dokploy:smart-deploy"],
+			kind: "update",
+			toImage: "ghcr.io/me/dokploy:smart-deploy",
+		});
+		expect(mockSpawnAsync).not.toHaveBeenCalled();
+	});
+
+	it("refuses while a Dokploy update runs or waits to be resumed", async () => {
+		mockGetDockerResourceType.mockResolvedValue("service");
+		mockGetUpdateData.mockResolvedValue({
+			latestVersion: "v9.9.9",
+			updateAvailable: true,
+		});
+		updater.busy.mockResolvedValue(true);
+
+		await expect(caller.updateServer()).rejects.toMatchObject({
+			code: "CONFLICT",
+		});
+		expect(updater.start).not.toHaveBeenCalled();
+		expect(mockSpawnAsync).not.toHaveBeenCalled();
 	});
 });

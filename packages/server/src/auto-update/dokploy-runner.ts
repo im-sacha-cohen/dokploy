@@ -1,5 +1,4 @@
 import { and, eq, gte, inArray } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { RecurrenceRule, scheduledJobs, scheduleJob } from "node-schedule";
 import { db } from "../db";
 import {
@@ -18,9 +17,9 @@ import { checkDokployUpdate } from "./dokploy-check";
 import {
 	imageHasUpdater,
 	isDokployUpdateBusy,
-	launchUpdater,
 	notifyDokployRun,
 	reconcileDokployUpdater,
+	startDokployUpdater,
 	watchDokployUpdater,
 } from "./dokploy-updater";
 import { currentOrNextOccurrence, type WindowOccurrence } from "./window";
@@ -220,43 +219,15 @@ const attempt = async (
 		return DONE;
 	}
 
-	const updaterRunId = `${new Date().toISOString().replace(/[-:]|\.\d+/g, "")}-${nanoid(6)}`;
-	// Inserted before the updater starts, so its database backup holds the
-	// row: after a restore, startup finds it and records the outcome.
-	const [run] = await db
-		.insert(updateRun)
-		.values({
-			updatePolicyId: policy.updatePolicyId,
-			targetType: "dokploy",
-			status: "backing_up",
-			fromImage: currentImage,
-			toImage: targetImage,
-			updaterRunId,
-		})
-		.returning();
-	try {
-		await launchUpdater(currentImage, [
-			"--target",
-			targetImage,
-			"--run-id",
-			updaterRunId,
-		]);
-	} catch (error) {
-		if (run) {
-			const [updated] = await db
-				.update(updateRun)
-				.set({
-					status: "aborted",
-					reason: `The updater did not start: ${error}`,
-					finishedAt: new Date().toISOString(),
-				})
-				.where(eq(updateRun.updateRunId, run.updateRunId))
-				.returning();
-			if (updated) await notifyDokployRun(updated);
-		}
-		return DONE;
-	}
-	void watchDokployUpdater();
+	await startDokployUpdater({
+		currentImage,
+		args: ["--target", targetImage],
+		kind: "update",
+		toImage: targetImage,
+		updatePolicyId: policy.updatePolicyId,
+	}).catch((error) => {
+		console.error("[auto-update] The Dokploy updater did not start:", error);
+	});
 	return DONE;
 };
 

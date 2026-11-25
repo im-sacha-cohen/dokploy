@@ -188,3 +188,46 @@ export const listUpdateRuns = (
 		orderBy: desc(updateRun.startedAt),
 		limit,
 	});
+
+const BACKUP_SERVICES = [
+	"postgres",
+	"mysql",
+	"mariadb",
+	"mongo",
+	"libsql",
+	"compose",
+] as const;
+
+/**
+ * Backups of databases and compose stacks in this environment: the ones an
+ * application rule can run before updating.
+ */
+export const listEnvironmentBackups = async (environmentId: string) => {
+	const service = { columns: { name: true, environmentId: true } } as const;
+	const rows = await db.query.backups.findMany({
+		with: {
+			postgres: service,
+			mysql: service,
+			mariadb: service,
+			mongo: service,
+			libsql: service,
+			compose: service,
+		},
+	});
+	return rows.flatMap((backup) => {
+		for (const key of BACKUP_SERVICES) {
+			const owner = backup[key];
+			const serviceId = backup[`${key}Id`];
+			if (owner && serviceId && owner.environmentId === environmentId) {
+				return [
+					{
+						backupId: backup.backupId,
+						serviceId,
+						label: `${owner.name} (${key}${backup.database ? `, ${backup.database}` : ""})`,
+					},
+				];
+			}
+		}
+		return [];
+	});
+};

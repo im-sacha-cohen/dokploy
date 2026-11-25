@@ -19,18 +19,21 @@ Nothing is deleted by an update:
 
 The panel is unavailable for one to three minutes while the new image starts.
 
-## Two ways to update
+## Ways to update
 
-| | Install command | Update button |
-|---|---|---|
-| Where | SSH on the server | Settings › Web Server › Update |
-| Database backup first | **yes**, automatic | no: take one yourself (below) |
-| Goes back by itself if the new version does not start | **yes** | no: Swarm pauses the update |
-| Available | always | once the server runs a fork build from 2026-11-23 or later |
+| | Install command | Update button | Scheduled updates |
+|---|---|---|---|
+| Where | SSH on the server | Settings › Web Server › Update | Settings › Web Server › Scheduled Dokploy updates |
+| When | when you run it | when you click | in a weekly window you choose |
+| Database backup first | **yes** | **yes**, with the updater (see below) | **yes** |
+| Goes back by itself if the new version does not stay healthy | image only | **yes**: image, database and `/etc/dokploy` | **yes**: image, database and `/etc/dokploy` |
+| Available | always | the updater: once the server runs a fork build from 2026-11-25 or later | same |
 
-**Use the install command for the first update after 2026-11-23**: it also
-sets the variables the Update button needs (`DOKPLOY_IMAGE`, `RELEASE_TAG`).
-Afterwards, either works.
+**The first update to a build from 2026-11-25 or later goes through the
+install command or the button without the updater**: the build that runs
+before has no `/app/dokploy-updater.sh`. Every update after that one uses it.
+Use the install command for the first update after 2026-11-23: it also sets
+the variables the Update button needs (`DOKPLOY_IMAGE`, `RELEASE_TAG`).
 
 ## Update with the install command
 
@@ -73,26 +76,61 @@ Use your panel's domain. The script:
 
 ## Update with the button
 
-1. Take a backup first:
-
-   ```bash
-   sudo mkdir -p /root/dokploy-fork && \
-   docker exec $(docker ps -qf name=dokploy-postgres) pg_dump -U dokploy dokploy \
-     | sudo tee /root/dokploy-fork/dokploy-$(date +%Y%m%d-%H%M%S).sql >/dev/null
-   ```
-
-2. Settings › Web Server › Update. The dialog shows the commits
+1. Settings › Web Server › Update. The dialog shows the commits
    (`current → latest`) and a link to the changes. Confirm.
+2. When the running build has the updater, the button starts it: backups
+   first, then the new version, put back if it does not stay healthy. The
+   run shows in the history of Scheduled Dokploy updates. On an older build,
+   the button switches the image directly: take a database backup first
+   (`pg_dump`, as in the install command section) and, if the panel does not
+   come back, run `docker service rollback dokploy` on the server.
 3. The page reloads when the new version answers. Check as above.
 
-If the panel does not come back after a few minutes, run
-`docker service rollback dokploy` on the server: it restores the previous image
-and its variables.
+## Scheduled updates
+
+Settings › Web Server › **Scheduled Dokploy updates**, and for an application
+deployed from a Docker image, its **Advanced** tab › **Scheduled updates**.
+Every rule starts off; nothing is checked or updated until it is turned on.
+
+- **When an update is found**: *Notify me* sends one notification per new
+  version (events *Dokploy Update* and *Application Update* in Settings ›
+  Notifications); *Update automatically* installs it in the window.
+- **Versions to follow**: *Same tag, new build* follows the tag in use
+  (`latest`, the fork's `smart-deploy`); *Patch*, *Minor* and *All versions*
+  move a version tag (`1.25.3 → 1.25.4`) and keep its form (`-alpine` stays).
+- **Maintenance window**: days, start time, length and time zone. An
+  application window must stay 60 minutes away from the Dokploy window, on
+  both sides: if a Dokploy update failed, restoring its database backup would
+  forget an application update made meanwhile. Saving a rule that breaks this
+  is refused, with a free start time suggested.
+- **Safety delay**: a release is installed once it is this old (72 hours by
+  default).
+- **Watch after updating**: how long the new version must stay healthy.
+- **Backups to run first** (applications): database or compose backups of
+  the same environment. If one fails, the update does not start.
+
+In a window, an update waits while deployments, backups or other updates run,
+retrying every 5 minutes until the window closes. A build that failed once is
+not tried again; the next one is. Each attempt, skip and notice is listed in
+the card's history.
+
+**Applications** are deployed through the usual deployment queue. The update
+counts as good when Smart Deploy finds the new version running (and healthy
+and reachable when it has a health check and a domain), and the same
+container still runs after the watch time. Otherwise the previous image,
+pinned to its digest, is deployed again. Private images use the registry
+credentials set on the application.
+
+**Going back later.** Under *Go back to before an update*, the last successful
+Dokploy updates whose backup is still kept can be undone: Dokploy runs the
+previous image again, with the database and configuration saved before that
+update. **Changes made in the panel since then are lost**; the current state
+is saved first.
 
 ## The updater
 
 Fork builds from 2026-11-25 or later ship `/app/dokploy-updater.sh`. The
-scheduled updates will use it, and it can be run by hand. It runs in a
+Update button and the scheduled updates use it, and it can be run by hand. It runs in a
 container of its own, started from the image that works now, so it is still
 there while the panel restarts:
 
@@ -127,8 +165,10 @@ are kept. Exit codes: 0 done, 1 refused before any change, 2 failed and put
 back, 3 putting back failed, 4 another updater is running.
 
 **The server restarted, or the updater was stopped, during an update.**
-`state.json` still shows `updating`, `verifying` or `restoring`. Put back what
-ran before that run (start the updater from the image of the previous build,
+`state.json` still shows `updating`, `verifying` or `restoring`, the panel
+marks the run *Interrupted* and no other update starts. If the panel answers,
+use **Resume and put back** in Scheduled Dokploy updates. Otherwise, put back
+what ran before that run (start the updater from the image of the previous build,
 `fromImage` in `state.json`, if the current one does not start):
 
 ```bash

@@ -89,6 +89,64 @@ If the panel does not come back after a few minutes, run
 `docker service rollback dokploy` on the server: it restores the previous image
 and its variables.
 
+## The updater
+
+Fork builds from 2026-11-25 or later ship `/app/dokploy-updater.sh`. The
+scheduled updates will use it, and it can be run by hand. It runs in a
+container of its own, started from the image that works now, so it is still
+there while the panel restarts:
+
+```bash
+CURRENT=$(docker service inspect dokploy --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')
+docker run -d --rm --name dokploy-updater \
+  -v /var/run/docker.sock:/var/run/docker.sock -v /etc/dokploy:/etc/dokploy \
+  "$CURRENT" bash /app/dokploy-updater.sh --target ghcr.io/im-sacha-cohen/dokploy:smart-deploy
+docker logs -f dokploy-updater
+```
+
+The updater:
+
+1. pins the tag to the digest it points to now, and stops if Dokploy already
+   runs it;
+2. checks the free space, then saves the service spec (image digest,
+   variables, mounts, ports), the database and `/etc/dokploy`, except
+   application and compose files and logs. If any of this fails, it stops
+   before changing anything;
+3. switches the service to the new image, and waits for the panel to answer
+   without interruption for 5 minutes (10 minutes at most to start);
+4. otherwise **puts everything back**:
+   - stops the panel;
+   - restores the database and `/etc/dokploy`, writing files in place so
+     that Traefik sees them;
+   - restores the saved spec as it was;
+   - checks that the panel answers again.
+
+Progress is in `/etc/dokploy/updates/state.json`. Each run has a folder in
+`/etc/dokploy/updates/runs/<run>/` (backup, spec, `updater.log`); the last 5
+are kept. Exit codes: 0 done, 1 refused before any change, 2 failed and put
+back, 3 putting back failed, 4 another updater is running.
+
+**The server restarted, or the updater was stopped, during an update.**
+`state.json` still shows `updating`, `verifying` or `restoring`. Put back what
+ran before that run (start the updater from the image of the previous build,
+`fromImage` in `state.json`, if the current one does not start):
+
+```bash
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v /etc/dokploy:/etc/dokploy \
+  "$(grep -o '"fromImage":"[^"]*"' /etc/dokploy/updates/state.json | cut -d'"' -f4)" \
+  bash /app/dokploy-updater.sh --resume
+```
+
+**An update succeeded, but the new version turns out broken.** Go back to the
+state saved just before it, using the run name from `/etc/dokploy/updates/runs/`.
+**Changes made in the panel since that run are lost.** The state before the
+rollback is saved first, in the rollback's own run folder:
+
+```bash
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v /etc/dokploy:/etc/dokploy \
+  "$CURRENT" bash /app/dokploy-updater.sh --rollback <run>
+```
+
 ## If something goes wrong
 
 **The update failed and the script went back by itself.** Dokploy runs the
@@ -143,5 +201,21 @@ build (backup taken, variables set), a broken build refused with a return to
 the previous fork build (not the official image), `--rollback`, and the
 database restore above. `dev/migrations/upgrade-e2e.sh` checks the migrations
 from a server on the fork, a server on official Dokploy and an empty database.
-Neither replaces a first update on your own server: keep the backup until you
+
+`dev/install/dokploy-updater-e2e.sh` runs the updater the way the panel will
+start it, in a throwaway Swarm with a real Postgres and a Traefik stand-in
+bind-mounting `/etc/dokploy/traefik`. It covers:
+
+- a good update, with the image pinned to its digest, the variables kept, and
+  nothing to do on a second run;
+- builds that crash, crash after changing the database and `/etc/dokploy`, or
+  stop answering after 20 seconds. Each time the exact previous spec, the
+  database and the configuration are back;
+- refusals before any change: no database, not enough disk space;
+- a second updater refused while one runs;
+- an updater killed mid-way, then `--resume`;
+- `--rollback` to the state before an earlier run;
+- keeping only the last runs.
+
+None of these tests replaces a first update on your own server: keep the backup until you
 have checked the panel.

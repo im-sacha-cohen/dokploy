@@ -43,6 +43,8 @@ COPY --from=build /prod/dokploy/drizzle ./drizzle
 COPY .env.production ./.env
 COPY --from=build /prod/dokploy/components.json ./components.json
 COPY --from=build /prod/dokploy/node_modules ./node_modules
+# Run from this image by the panel, in a container of its own: see the script.
+COPY scripts/dokploy-updater.sh ./dokploy-updater.sh
 
 
 # Install docker

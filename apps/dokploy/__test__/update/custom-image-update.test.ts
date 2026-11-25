@@ -73,6 +73,7 @@ const fakeRegistry = (tagDigest: string) => {
 		const config = path.match(/^blobs\/config-(sha256:\w+)$/);
 		if (config) {
 			return json({
+				created: "2026-11-20T08:00:00Z",
 				config: {
 					Labels: {
 						"org.opencontainers.image.revision": revisions[config[1] as string],
@@ -144,6 +145,7 @@ describe("custom Dokploy image (fork) updates", () => {
 			digest: NEW,
 			revision: "bbbbbbb2",
 			source: "https://github.com/me/dokploy",
+			created: "2026-11-20T08:00:00Z",
 		});
 	});
 

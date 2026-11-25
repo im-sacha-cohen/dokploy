@@ -77,6 +77,16 @@ void app.prepare().then(async () => {
 			await initCancelDeployments();
 			await initVolumeBackupsCronJobs();
 			await sendDokployRestartNotifications();
+			const { initDokployAutoUpdate } = await import(
+				"@dokploy/server/auto-update/dokploy-runner"
+			);
+			await initDokployAutoUpdate({
+				currentVersion: packageInfo.version,
+				pendingDeploymentJobs: async () => {
+					const { myQueue } = await import("./queues/queueSetup");
+					return (await myQueue.getJobs()).length;
+				},
+			});
 		}
 		await initEnterpriseBackupCronJobs();
 		if (IS_CLOUD) {

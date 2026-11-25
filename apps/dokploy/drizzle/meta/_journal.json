@@ -1450,6 +1450,13 @@
       "when": 1795602337007,
       "tag": "0206_auto_update",
       "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1795602888873,
+      "tag": "0207_update_notifications",
+      "breakpoints": true
     }
   ]
 }

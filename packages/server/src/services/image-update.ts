@@ -109,6 +109,8 @@ export interface RegistryImageInfo {
 	digest: string;
 	revision: string | null;
 	source: string | null;
+	/** Build date from the image config, for the update safety delay. */
+	created: string | null;
 }
 
 export const getRegistryImageInfo = async (
@@ -125,7 +127,8 @@ export const getRegistryImageInfo = async (
 		(ref.reference.startsWith("sha256:") ? ref.reference : "");
 	if (!digest) throw new Error(`${ref.registry} returned no digest`);
 
-	// Labels are optional extras: the digest alone decides the update.
+	// Labels and date are optional extras: the digest alone decides the update.
+	const bare = { digest, revision: null, source: null, created: null };
 	try {
 		let manifest = (await response.json()) as {
 			manifests?: {
@@ -142,23 +145,27 @@ export const getRegistryImageInfo = async (
 				) ??
 				manifest.manifests.find((m) => m.platform?.os === "linux") ??
 				manifest.manifests[0];
-			if (!entry) return { digest, revision: null, source: null };
+			if (!entry) return bare;
 			manifest = await (
 				await registryFetch(ref, `manifests/${entry.digest}`, MANIFEST_TYPES)
 			).json();
 		}
-		if (!manifest.config) return { digest, revision: null, source: null };
+		if (!manifest.config) return bare;
 		const config = (await (
 			await registryFetch(ref, `blobs/${manifest.config.digest}`)
-		).json()) as { config?: { Labels?: Record<string, string> } };
+		).json()) as {
+			created?: string;
+			config?: { Labels?: Record<string, string> };
+		};
 		const labels = config.config?.Labels ?? {};
 		return {
 			digest,
 			revision: labels["org.opencontainers.image.revision"] ?? null,
 			source: labels["org.opencontainers.image.source"] ?? null,
+			created: config.created ?? null,
 		};
 	} catch {
-		return { digest, revision: null, source: null };
+		return bare;
 	}
 };
 

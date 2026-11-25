@@ -1,4 +1,14 @@
 import { IS_CLOUD } from "@dokploy/server";
+import { serviceImage } from "@dokploy/server/auto-update/dokploy-check";
+import {
+	runDokployWindow,
+	scheduleDokployAutoUpdate,
+} from "@dokploy/server/auto-update/dokploy-runner";
+import {
+	isUpdaterRunning,
+	readUpdaterState,
+	resumeDokployUpdate,
+} from "@dokploy/server/auto-update/dokploy-updater";
 import {
 	currentOrNextOccurrence,
 	DOKPLOY_UPDATE_MARGIN_MINUTES,
@@ -45,6 +55,10 @@ export const updatePolicyRouter = createTRPCRouter({
 			policy: withNextWindow(await findDokployUpdatePolicy()),
 			marginMinutes: DOKPLOY_UPDATE_MARGIN_MINUTES,
 			runs: await listUpdateRuns({ type: "dokploy" }),
+			updater: {
+				state: await readUpdaterState().catch(() => null),
+				running: await isUpdaterRunning().catch(() => false),
+			},
 		};
 	}),
 
@@ -60,8 +74,29 @@ export const updatePolicyRouter = createTRPCRouter({
 				resourceName: "dokploy-update-policy",
 				metadata: { enabled: policy.enabled, mode: policy.mode },
 			});
+			scheduleDokployAutoUpdate(policy);
+			// Saved while its window is open: no need to wait a week.
+			void runDokployWindow();
 			return withNextWindow(policy);
 		}),
+
+	resumeDokploy: adminProcedure.mutation(async ({ ctx }) => {
+		assertSelfHosted();
+		try {
+			await resumeDokployUpdate(await serviceImage());
+		} catch (error) {
+			throw new TRPCError({
+				code: "BAD_REQUEST",
+				message: error instanceof Error ? error.message : String(error),
+			});
+		}
+		await audit(ctx, {
+			action: "restore",
+			resourceType: "settings",
+			resourceName: "dokploy-update",
+		});
+		return true;
+	}),
 
 	getForApplication: protectedProcedure
 		.input(applicationInput)

@@ -94,7 +94,7 @@ All tools are listed regardless of the token. Calling a tool outside the token's
 
 | Variable | Role |
 |---|---|
-| `DOKPLOY_MCP_RESOURCE_URL` | Public URL of `/mcp` (for example `https://dokploy.example.com/mcp`); several can be given, comma-separated. **Required in production.** It serves as the token audience and as the Host allowlist. Without it, `/mcp` returns 503. In development it defaults to `http://localhost:3000/mcp` |
+| `DOKPLOY_MCP_RESOURCE_URL` | Public URL of `/mcp` (for example `https://dokploy.example.com/mcp`); several can be given, comma-separated. **Required in production.** It serves as the token audience and as the Host allowlist. Without it, `/mcp` returns 503 and the OAuth server (`jwt`, `oauthProvider`) is not registered. In development it defaults to `http://localhost:3000/mcp` |
 
 At the organization level, the integration is **disabled by default**. An owner or admin enables it in Settings › AI Integrations and chooses the allowed scopes.
 

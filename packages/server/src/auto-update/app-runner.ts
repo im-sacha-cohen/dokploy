@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
-import { RecurrenceRule, scheduledJobs, scheduleJob } from "node-schedule";
+import { RecurrenceRule, scheduleJob } from "node-schedule";
 import { db } from "../db";
 import { applications } from "../db/schema/application";
 import {
@@ -27,6 +27,7 @@ import {
 	checkApplicationUpdate,
 } from "./app-check";
 import { isDokployUpdateBusy } from "./dokploy-updater";
+import { autoUpdateState, replaceJob, runOnce } from "./state";
 import {
 	currentOrNextOccurrence,
 	DOKPLOY_UPDATE_MARGIN_MINUTES,
@@ -56,7 +57,7 @@ export interface AppAutoUpdateDeps {
 	pendingJobs: (applicationId: string) => Promise<number>;
 }
 
-let deps: AppAutoUpdateDeps | null = null;
+const getDeps = () => autoUpdateState().appDeps as AppAutoUpdateDeps | null;
 
 type CheckedUpdate = Extract<ApplicationUpdateCheck, { available: true }>;
 type Attempt = { wait: false } | { wait: true; reasons: string[] };
@@ -85,7 +86,7 @@ const appRuns = (applicationId: string, since?: Date) =>
 
 const notify = (
 	policy: UpdatePolicy,
-	app: App,
+	app: Pick<App, "name">,
 	title: string,
 	outcome: "success" | "failure" | "info",
 	facts: { name: string; value: string }[],
@@ -156,6 +157,7 @@ const nearDokployWindow = async () => {
 
 const blockers = async (app: App) => {
 	const reasons: string[] = [];
+	const deps = getDeps();
 	if (!deps) return ["The scheduler is not initialised."];
 	if (await isDokployUpdateBusy()) {
 		reasons.push("a Dokploy update is running or waits to be resumed");
@@ -262,6 +264,7 @@ const deployAndVerify = async (
 	verifyMinutes: number,
 	title: string,
 ) => {
+	const deps = getDeps();
 	if (!deps) return "The scheduler is not initialised.";
 	await db
 		.update(applications)
@@ -392,7 +395,7 @@ const attempt = async (
 	policy: UpdatePolicy,
 	occurrence: WindowOccurrence,
 ): Promise<Attempt> => {
-	if (!deps || !policy.applicationId) return DONE;
+	if (!getDeps() || !policy.applicationId) return DONE;
 	const app = await findApplication(policy.applicationId);
 	if (!app) return DONE;
 	if (app.sourceType !== "docker") {
@@ -488,43 +491,41 @@ const attempt = async (
 	return DONE;
 };
 
-const windowsRunning = new Set<string>();
+export const runAppWindow = (updatePolicyId: string) =>
+	runOnce(`app-window-${updatePolicyId}`, async () => {
+		try {
+			for (;;) {
+				const policy = await findPolicy(updatePolicyId);
+				if (!policy?.enabled || !policy.applicationId) return;
+				const occurrence = currentOrNextOccurrence(policyWindow(policy));
+				if (!occurrence || occurrence.start.getTime() > Date.now()) return;
 
-export const runAppWindow = async (updatePolicyId: string) => {
-	if (windowsRunning.has(updatePolicyId)) return;
-	windowsRunning.add(updatePolicyId);
-	try {
-		for (;;) {
-			const policy = await findPolicy(updatePolicyId);
-			if (!policy?.enabled || !policy.applicationId) return;
-			const occurrence = currentOrNextOccurrence(policyWindow(policy));
-			if (!occurrence || occurrence.start.getTime() > Date.now()) return;
-
-			const result = await attempt(policy, occurrence);
-			if (!result.wait) return;
-			if (Date.now() + RETRY_MS >= occurrence.end.getTime()) {
-				await recordOnce(policy, occurrence, {
-					status: "skipped",
-					fromImage: "",
-					toImage: "",
-					reason: `The window closed before the update could start: ${result.reasons.join("; ")}.`,
-				});
-				return;
+				const result = await attempt(policy, occurrence);
+				if (!result.wait) return;
+				if (Date.now() + RETRY_MS >= occurrence.end.getTime()) {
+					await recordOnce(policy, occurrence, {
+						status: "skipped",
+						fromImage: "",
+						toImage: "",
+						reason: `The window closed before the update could start: ${result.reasons.join("; ")}.`,
+					});
+					return;
+				}
+				await sleep(RETRY_MS);
 			}
-			await sleep(RETRY_MS);
+		} catch (error) {
+			console.error("[auto-update] App update window failed:", error);
 		}
-	} catch (error) {
-		console.error("[auto-update] App update window failed:", error);
-	} finally {
-		windowsRunning.delete(updatePolicyId);
-	}
-};
+	});
 
 const jobName = (updatePolicyId: string) => `app-auto-update-${updatePolicyId}`;
 
 export const scheduleAppAutoUpdate = (policy: UpdatePolicy) => {
-	scheduledJobs[jobName(policy.updatePolicyId)]?.cancel();
-	if (!deps || !policy.enabled || !policy.applicationId) return;
+	const name = jobName(policy.updatePolicyId);
+	if (!getDeps() || !policy.enabled || !policy.applicationId) {
+		replaceJob(name, () => null);
+		return;
+	}
 	const [hour = 0, minute = 0] = policy.windowStart.split(":").map(Number);
 	const rule = new RecurrenceRule();
 	rule.dayOfWeek = policy.windowDays;
@@ -532,9 +533,11 @@ export const scheduleAppAutoUpdate = (policy: UpdatePolicy) => {
 	rule.minute = minute;
 	rule.second = 0;
 	rule.tz = policy.timezone;
-	scheduleJob(jobName(policy.updatePolicyId), rule, () => {
-		void runAppWindow(policy.updatePolicyId);
-	});
+	replaceJob(name, () =>
+		scheduleJob(name, rule, () => {
+			void runAppWindow(policy.updatePolicyId);
+		}),
+	);
 };
 
 /** Runs left half-done by a panel restart: say so, they do not resume. */
@@ -544,7 +547,9 @@ const markInterruptedRuns = async () => {
 			eq(updateRun.targetType, "application"),
 			inArray(updateRun.status, IN_PROGRESS),
 		),
-		with: { policy: true, application: true },
+		// Only the name: a full application row is over Postgres's limit of
+		// 100 arguments to json_build_array, which drizzle uses for relations.
+		with: { policy: true, application: { columns: { name: true } } },
 	});
 	for (const run of stale) {
 		const reason =
@@ -571,7 +576,7 @@ const markInterruptedRuns = async () => {
 };
 
 export const initAppAutoUpdates = async (dependencies: AppAutoUpdateDeps) => {
-	deps = dependencies;
+	autoUpdateState().appDeps = dependencies;
 	try {
 		await markInterruptedRuns();
 		const policies = await db.query.updatePolicy.findMany({

@@ -1,8 +1,7 @@
 import { Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
 	Select,
@@ -13,6 +12,13 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import {
+	endTime,
+	type Preset,
+	PresetSelect,
+	TimePicker,
+	TimezonePicker,
+} from "./window-pickers";
 
 export type UpdateMode = "notify" | "auto";
 export type VersionRule = "digest" | "patch" | "minor" | "major";
@@ -57,19 +63,56 @@ const DAYS = [
 	{ value: 0, label: "Sun" },
 ];
 
+const formatDuration = (minutes: number) => {
+	if (minutes < 60) return `${minutes} minutes`;
+	const hours = minutes / 60;
+	return Number.isInteger(hours)
+		? `${hours} hour${hours > 1 ? "s" : ""}`
+		: `${Math.floor(hours)} h ${minutes % 60} min`;
+};
+
+const WINDOW_LENGTHS: Preset[] = [30, 60, 120, 180, 240, 360, 480, 720].map(
+	(minutes) => ({ value: minutes, label: formatDuration(minutes) }),
+);
+const RELEASE_DELAYS: Preset[] = [
+	{ value: 0, label: "Right away" },
+	{ value: 24, label: "1 day" },
+	{ value: 48, label: "2 days" },
+	{ value: 72, label: "3 days (recommended)" },
+	{ value: 168, label: "1 week" },
+];
+const CHECK_DURATIONS: Preset[] = [
+	{ value: 2, label: "2 minutes" },
+	{ value: 5, label: "5 minutes (recommended)" },
+	{ value: 10, label: "10 minutes" },
+	{ value: 15, label: "15 minutes" },
+	{ value: 30, label: "30 minutes" },
+];
+
+const DAY_NAMES = [
+	"Sunday",
+	"Monday",
+	"Tuesday",
+	"Wednesday",
+	"Thursday",
+	"Friday",
+	"Saturday",
+];
+const describeDays = (days: number[]) => {
+	if (days.length === 7) return "Every day";
+	const order = [1, 2, 3, 4, 5, 6, 0];
+	return `Every ${order
+		.filter((d) => days.includes(d))
+		.map((d) => DAY_NAMES[d])
+		.join(", ")}`;
+};
+
 const browserTimezone = () => {
 	try {
 		return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 	} catch {
 		return "UTC";
 	}
-};
-
-const timezones = () => {
-	const intl = Intl as unknown as {
-		supportedValuesOf?: (key: string) => string[];
-	};
-	return intl.supportedValuesOf?.("timeZone") ?? ["UTC"];
 };
 
 export const toSettings = (
@@ -174,7 +217,6 @@ export const UpdatePolicyForm = ({
 }) => {
 	const [settings, setSettings] = useState(() => toSettings(policy));
 	useEffect(() => setSettings(toSettings(policy)), [policy]);
-	const zones = useMemo(timezones, []);
 	const set = <K extends keyof UpdatePolicySettings>(
 		key: K,
 		value: UpdatePolicySettings[K],
@@ -257,7 +299,7 @@ export const UpdatePolicyForm = ({
 
 			<Field
 				label="Maintenance window"
-				hint={`Updates start inside this window only. Application updates stay ${marginMinutes} minutes away from the Dokploy window, on both sides.`}
+				hint={`Updates only start inside this window. Application updates stay ${marginMinutes} minutes away from the Dokploy window, before and after it.`}
 			>
 				<div className="flex flex-wrap gap-1.5">
 					{DAYS.map((day) => (
@@ -278,67 +320,59 @@ export const UpdatePolicyForm = ({
 				<div className="mt-2 grid gap-3 sm:grid-cols-3">
 					<div className="flex flex-col gap-1">
 						<span className="text-xs text-muted-foreground">Starts at</span>
-						<Input
-							type="time"
+						<TimePicker
 							value={settings.window.startTime}
-							onChange={(e) => setWindow("startTime", e.target.value)}
+							onChange={(value) => setWindow("startTime", value)}
 						/>
 					</div>
 					<div className="flex flex-col gap-1">
-						<span className="text-xs text-muted-foreground">
-							Lasts (minutes)
-						</span>
-						<Input
-							type="number"
-							min={15}
-							max={720}
-							step={15}
+						<span className="text-xs text-muted-foreground">Window length</span>
+						<PresetSelect
 							value={settings.window.durationMinutes}
-							onChange={(e) =>
-								setWindow("durationMinutes", Number(e.target.value))
-							}
+							onChange={(value) => setWindow("durationMinutes", value)}
+							presets={WINDOW_LENGTHS}
+							describe={(minutes) => formatDuration(minutes)}
 						/>
 					</div>
 					<div className="flex flex-col gap-1">
 						<span className="text-xs text-muted-foreground">Time zone</span>
-						<Input
-							list="update-timezones"
+						<TimezonePicker
 							value={settings.window.timezone}
-							onChange={(e) => setWindow("timezone", e.target.value)}
+							onChange={(value) => setWindow("timezone", value)}
 						/>
-						<datalist id="update-timezones">
-							{zones.map((zone) => (
-								<option key={zone} value={zone} />
-							))}
-						</datalist>
 					</div>
 				</div>
+				<p className="mt-1 text-sm">
+					{settings.window.days.length === 0
+						? "Pick at least one day."
+						: `${describeDays(settings.window.days)}, from ${settings.window.startTime} to ${endTime(settings.window.startTime, settings.window.durationMinutes)}.`}
+				</p>
 				{conflictNote}
 			</Field>
 
 			<div className="grid gap-4 md:grid-cols-2">
 				<Field
-					label="Safety delay (hours)"
-					hint="A release is installed only once it is this old: broken releases are often replaced within a day or two."
+					label="Wait before installing a new release"
+					hint="A release is installed only once it has been out this long. Broken releases are usually replaced within a day or two, so waiting avoids most of them."
 				>
-					<Input
-						type="number"
-						min={0}
-						max={720}
+					<PresetSelect
 						value={settings.minAgeHours}
-						onChange={(e) => set("minAgeHours", Number(e.target.value))}
+						onChange={(value) => set("minAgeHours", value)}
+						presets={RELEASE_DELAYS}
+						describe={(hours) =>
+							hours === 0 ? "Right away" : `${hours} hours`
+						}
 					/>
 				</Field>
 				<Field
-					label="Watch after updating (minutes)"
-					hint="The new version must stay healthy this long, or the previous one is put back."
+					label="Check after updating"
+					hint="The new version must keep running and healthy for this long. If it fails or stops in that time, the previous version is put back automatically."
 				>
-					<Input
-						type="number"
-						min={1}
-						max={60}
+					<PresetSelect
 						value={settings.verifyMinutes}
-						onChange={(e) => set("verifyMinutes", Number(e.target.value))}
+						onChange={(value) => set("verifyMinutes", value)}
+						presets={CHECK_DURATIONS}
+						describe={(minutes) => formatDuration(minutes)}
 					/>
 				</Field>
 			</div>

@@ -1,5 +1,5 @@
 import { and, eq, gte, inArray } from "drizzle-orm";
-import { RecurrenceRule, scheduledJobs, scheduleJob } from "node-schedule";
+import { RecurrenceRule, scheduleJob } from "node-schedule";
 import { db } from "../db";
 import {
 	type UpdatePolicy,
@@ -22,6 +22,7 @@ import {
 	startDokployUpdater,
 	watchDokployUpdater,
 } from "./dokploy-updater";
+import { autoUpdateState, replaceJob, runOnce } from "./state";
 import { currentOrNextOccurrence, type WindowOccurrence } from "./window";
 
 const JOB_NAME = "dokploy-auto-update";
@@ -40,7 +41,8 @@ export interface DokployAutoUpdateDeps {
 	pendingDeploymentJobs: () => Promise<number>;
 }
 
-let deps: DokployAutoUpdateDeps | null = null;
+const getDeps = () =>
+	autoUpdateState().dokployDeps as DokployAutoUpdateDeps | null;
 
 type Attempt = { wait: false } | { wait: true; reasons: string[] };
 const DONE: Attempt = { wait: false };
@@ -85,6 +87,7 @@ const recordOnce = async (
 /** Why the update cannot start now; empty when it can. */
 const blockers = async () => {
 	const reasons: string[] = [];
+	const deps = getDeps();
 	if (!deps) return ["The scheduler is not initialised."];
 	if ((await deps.pendingDeploymentJobs()) > 0) {
 		reasons.push("deployments are queued or running");
@@ -122,6 +125,7 @@ const attempt = async (
 	policy: UpdatePolicy,
 	occurrence: WindowOccurrence,
 ): Promise<Attempt> => {
+	const deps = getDeps();
 	if (!deps || (await isDokployUpdateBusy())) return DONE;
 
 	let check: Awaited<ReturnType<typeof checkDokployUpdate>>;
@@ -225,55 +229,53 @@ const attempt = async (
 		kind: "update",
 		toImage: targetImage,
 		updatePolicyId: policy.updatePolicyId,
+		verifyMinutes: policy.verifyMinutes,
 	}).catch((error) => {
 		console.error("[auto-update] The Dokploy updater did not start:", error);
 	});
 	return DONE;
 };
 
-let windowRunning = false;
-
 /** Works through the window open now, retrying while something blocks. */
-export const runDokployWindow = async () => {
-	if (windowRunning) return;
-	windowRunning = true;
-	try {
-		for (;;) {
-			const policy = await findDokployUpdatePolicy();
-			if (!policy?.enabled) return;
-			const occurrence = currentOrNextOccurrence(policyWindow(policy));
-			if (!occurrence || occurrence.start.getTime() > Date.now()) return;
+export const runDokployWindow = () =>
+	runOnce("dokploy-window", async () => {
+		try {
+			for (;;) {
+				const policy = await findDokployUpdatePolicy();
+				if (!policy?.enabled) return;
+				const occurrence = currentOrNextOccurrence(policyWindow(policy));
+				if (!occurrence || occurrence.start.getTime() > Date.now()) return;
 
-			const result = await attempt(policy, occurrence);
-			if (!result.wait) return;
-			if (Date.now() + RETRY_MS >= occurrence.end.getTime()) {
-				const check = await checkDokployUpdate(
-					deps?.currentVersion ?? "",
-					policy.versionRule,
-				).catch(() => null);
-				await recordOnce(
-					policy,
-					occurrence,
-					"skipped",
-					check?.currentImage ?? "",
-					check?.available ? check.targetImage : "",
-					`The window closed before the update could start: ${result.reasons.join("; ")}.`,
-				);
-				return;
+				const result = await attempt(policy, occurrence);
+				if (!result.wait) return;
+				if (Date.now() + RETRY_MS >= occurrence.end.getTime()) {
+					const check = await checkDokployUpdate(
+						getDeps()?.currentVersion ?? "",
+						policy.versionRule,
+					).catch(() => null);
+					await recordOnce(
+						policy,
+						occurrence,
+						"skipped",
+						check?.currentImage ?? "",
+						check?.available ? check.targetImage : "",
+						`The window closed before the update could start: ${result.reasons.join("; ")}.`,
+					);
+					return;
+				}
+				await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
 			}
-			await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
+		} catch (error) {
+			console.error("[auto-update] Dokploy update window failed:", error);
 		}
-	} catch (error) {
-		console.error("[auto-update] Dokploy update window failed:", error);
-	} finally {
-		windowRunning = false;
-	}
-};
+	});
 
 /** (Re)plans the job that opens each window; none when the rule is off. */
 export const scheduleDokployAutoUpdate = (policy: UpdatePolicy | null) => {
-	scheduledJobs[JOB_NAME]?.cancel();
-	if (!deps || !policy?.enabled) return;
+	if (!getDeps() || !policy?.enabled) {
+		replaceJob(JOB_NAME, () => null);
+		return;
+	}
 	const [hour = 0, minute = 0] = policy.windowStart.split(":").map(Number);
 	const rule = new RecurrenceRule();
 	rule.dayOfWeek = policy.windowDays;
@@ -281,13 +283,15 @@ export const scheduleDokployAutoUpdate = (policy: UpdatePolicy | null) => {
 	rule.minute = minute;
 	rule.second = 0;
 	rule.tz = policy.timezone;
-	scheduleJob(JOB_NAME, rule, () => void runDokployWindow());
+	replaceJob(JOB_NAME, () =>
+		scheduleJob(JOB_NAME, rule, () => void runDokployWindow()),
+	);
 };
 
 export const initDokployAutoUpdate = async (
 	dependencies: DokployAutoUpdateDeps,
 ) => {
-	deps = dependencies;
+	autoUpdateState().dokployDeps = dependencies;
 	try {
 		if ((await reconcileDokployUpdater()) === "running") {
 			void watchDokployUpdater();

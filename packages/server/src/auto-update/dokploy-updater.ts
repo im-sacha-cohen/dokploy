@@ -11,6 +11,7 @@ import {
 } from "../utils/notifications/auto-update";
 import { execAsync } from "../utils/process/execAsync";
 import { spawnAsync } from "../utils/process/spawnAsync";
+import { runOnce } from "./state";
 
 /**
  * Panel side of scripts/dokploy-updater.sh: starts it in a container of its
@@ -102,15 +103,28 @@ export const imageHasUpdater = async (image: string) => {
 const newUpdaterRunId = () =>
 	`${new Date().toISOString().replace(/[-:]|\.\d+/g, "")}-${nanoid(6)}`;
 
-/** Starts the updater from `image`, which must be one that works now. */
-export const launchUpdater = async (image: string, args: string[]) => {
+/**
+ * Starts the updater from `image`, which must be one that works now.
+ * `verifyMinutes`: how long the new version must stay healthy (the script's
+ * default when omitted).
+ */
+export const launchUpdater = async (
+	image: string,
+	args: string[],
+	verifyMinutes?: number,
+) => {
 	const base = paths().BASE_PATH;
 	await spawnAsync("docker", [
 		"run",
 		"-d",
 		"--rm",
+		// The image's own healthcheck probes the panel, which does not run here.
+		"--no-healthcheck",
 		"--name",
 		UPDATER_CONTAINER,
+		...(verifyMinutes
+			? ["-e", `UPDATER_VERIFY_SECONDS=${Math.round(verifyMinutes * 60)}`]
+			: []),
 		"-v",
 		"/var/run/docker.sock:/var/run/docker.sock",
 		"-v",
@@ -242,13 +256,9 @@ export const reconcileDokployUpdater = async (): Promise<
 	return "interrupted";
 };
 
-let watching = false;
-
 /** Follows a running updater until its run is finished or interrupted. */
-export const watchDokployUpdater = async () => {
-	if (watching) return;
-	watching = true;
-	try {
+export const watchDokployUpdater = () =>
+	runOnce("dokploy-updater-watch", async () => {
 		for (;;) {
 			const status = await reconcileDokployUpdater().catch((error) => {
 				console.error("[auto-update] Reading the updater state failed:", error);
@@ -257,10 +267,7 @@ export const watchDokployUpdater = async () => {
 			if (status !== "running") return;
 			await new Promise((resolve) => setTimeout(resolve, WATCH_INTERVAL_MS));
 		}
-	} finally {
-		watching = false;
-	}
-};
+	});
 
 /**
  * Restarts an interrupted run in --resume mode, from the image that ran
@@ -299,12 +306,14 @@ export const startDokployUpdater = async ({
 	kind,
 	toImage,
 	updatePolicyId = null,
+	verifyMinutes,
 }: {
 	currentImage: string;
 	args: string[];
 	kind: UpdateRun["kind"];
 	toImage: string;
 	updatePolicyId?: string | null;
+	verifyMinutes?: number;
 }) => {
 	const updaterRunId = newUpdaterRunId();
 	const [run] = await db
@@ -320,7 +329,11 @@ export const startDokployUpdater = async ({
 		})
 		.returning();
 	try {
-		await launchUpdater(currentImage, [...args, "--run-id", updaterRunId]);
+		await launchUpdater(
+			currentImage,
+			[...args, "--run-id", updaterRunId],
+			verifyMinutes,
+		);
 	} catch (error) {
 		if (run) {
 			const [updated] = await db

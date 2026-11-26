@@ -14,7 +14,9 @@ import { runOn, SHA_PATTERN } from "./shell";
 import { describeSource } from "./source";
 
 export const COMMITS_LIMIT = 30;
-const PROVIDER_TIMEOUT_MS = 15_000;
+/** Gitea caps its pages at 50 items by default. */
+export const GITEA_PAGE_MAX = 50;
+export const PROVIDER_TIMEOUT_MS = 15_000;
 
 export interface RemoteCommit {
 	sha: string;
@@ -62,10 +64,10 @@ export interface CommitSource {
 	customGitSSHKeyId: string | null;
 }
 
-const firstLine = (message: string | null | undefined) =>
+export const firstLine = (message: string | null | undefined) =>
 	(message ?? "").split("\n")[0]?.trim().slice(0, 200) ?? "";
 
-const getJson = async (url: string, headers: Record<string, string>) => {
+export const getJson = async (url: string, headers: Record<string, string>) => {
 	const response = await fetch(url, {
 		headers: { Accept: "application/json", ...headers },
 	});
@@ -78,6 +80,7 @@ const getJson = async (url: string, headers: Record<string, string>) => {
 const fromProvider = async (
 	source: CommitSource,
 	branch: string,
+	limit: number,
 ): Promise<RemoteCommit[]> => {
 	switch (source.sourceType) {
 		case "github": {
@@ -87,7 +90,7 @@ const fromProvider = async (
 				owner: source.owner ?? "",
 				repo: source.repository ?? "",
 				sha: branch,
-				per_page: COMMITS_LIMIT,
+				per_page: limit,
 			});
 			return data.map((c) => ({
 				sha: c.sha,
@@ -107,7 +110,7 @@ const fromProvider = async (
 				"",
 			);
 			const data = (await getJson(
-				`${base}/api/v4/projects/${source.gitlabProjectId}/repository/commits?ref_name=${encodeURIComponent(branch)}&per_page=${COMMITS_LIMIT}`,
+				`${base}/api/v4/projects/${source.gitlabProjectId}/repository/commits?ref_name=${encodeURIComponent(branch)}&per_page=${limit}`,
 				{ Authorization: `Bearer ${gitlab.accessToken}` },
 			)) as {
 				id: string;
@@ -132,7 +135,7 @@ const fromProvider = async (
 				"",
 			);
 			const data = (await getJson(
-				`${base}/api/v1/repos/${encodeURIComponent(source.giteaOwner ?? "")}/${encodeURIComponent(source.giteaRepository ?? "")}/commits?sha=${encodeURIComponent(branch)}&limit=${COMMITS_LIMIT}&stat=false&verification=false&files=false`,
+				`${base}/api/v1/repos/${encodeURIComponent(source.giteaOwner ?? "")}/${encodeURIComponent(source.giteaRepository ?? "")}/commits?sha=${encodeURIComponent(branch)}&limit=${Math.min(limit, GITEA_PAGE_MAX)}&stat=false&verification=false&files=false`,
 				{ Authorization: `token ${gitea.accessToken}` },
 			)) as {
 				sha: string;
@@ -154,7 +157,7 @@ const fromProvider = async (
 			const repo =
 				source.bitbucketRepositorySlug || source.bitbucketRepository || "";
 			const data = (await getJson(
-				`https://api.bitbucket.org/2.0/repositories/${encodeURIComponent(source.bitbucketOwner ?? "")}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(branch)}?pagelen=${COMMITS_LIMIT}`,
+				`https://api.bitbucket.org/2.0/repositories/${encodeURIComponent(source.bitbucketOwner ?? "")}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(branch)}?pagelen=${limit}`,
 				getBitbucketHeaders(bitbucket),
 			)) as {
 				values: {
@@ -194,10 +197,12 @@ export const parseGitLog = (stdout: string): RemoteCommit[] =>
  * A custom Git remote has no API: a bare, blob-less clone of the last commits
  * into a temporary folder, deleted on exit, with the configured SSH key.
  */
-const gitCloneLogCommand = async (
+export const gitCloneLogCommand = async (
 	source: CommitSource,
 	branch: string,
 	serverId: string | null,
+	limit: number,
+	extra: string[] = [],
 ) => {
 	const lines = ["set -e", "DIR=$(mktemp -d)", 'trap "rm -rf $DIR" EXIT'];
 	if (source.customGitSSHKeyId) {
@@ -210,8 +215,9 @@ const gitCloneLogCommand = async (
 		);
 	}
 	lines.push(
-		`GIT_TERMINAL_PROMPT=0 timeout 30 git clone -q --bare --single-branch --depth ${COMMITS_LIMIT} --filter=blob:none --branch ${quote([branch])} -- ${quote([source.customGitUrl ?? ""])} "$DIR/repo"`,
-		`git -C "$DIR/repo" log -${COMMITS_LIMIT} --format='%H%x1f%an%x1f%aI%x1f%s'`,
+		`GIT_TERMINAL_PROMPT=0 timeout 30 git clone -q --bare --single-branch --depth ${limit} --filter=blob:none --branch ${quote([branch])} -- ${quote([source.customGitUrl ?? ""])} "$DIR/repo"`,
+		`git -C "$DIR/repo" log -${limit} --format='%H%x1f%an%x1f%aI%x1f%s'`,
+		...extra,
 	);
 	return lines.join("; ");
 };
@@ -219,6 +225,7 @@ const gitCloneLogCommand = async (
 /** The last commits of the configured branch, newest first. Never guesses. */
 export const listRemoteCommits = async (
 	source: CommitSource,
+	limit = COMMITS_LIMIT,
 ): Promise<RemoteCommits> => {
 	const described = describeSource(source);
 	if (!described.isGit) {
@@ -236,7 +243,7 @@ export const listRemoteCommits = async (
 		const serverId = source.buildServerId || source.serverId;
 		const result = await runOn(
 			serverId,
-			await gitCloneLogCommand(source, branch, serverId),
+			await gitCloneLogCommand(source, branch, serverId, limit),
 		);
 		const commits = parseGitLog(result.stdout);
 		if (result.ok && commits.length > 0) {
@@ -251,7 +258,7 @@ export const listRemoteCommits = async (
 
 	try {
 		const commits = await withTimeout(
-			fromProvider(source, branch),
+			fromProvider(source, branch, limit),
 			PROVIDER_TIMEOUT_MS,
 			"provider commit list",
 		);

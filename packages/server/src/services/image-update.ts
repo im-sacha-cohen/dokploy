@@ -73,13 +73,14 @@ const registryFetch = async (
 	path: string,
 	accept?: string,
 	credentials?: RegistryCredentials,
+	method: "GET" | "HEAD" = "GET",
 ) => {
 	const url = path.startsWith("/v2/")
 		? `https://${ref.registry}${path}`
 		: `https://${ref.registry}/v2/${ref.repository}/${path}`;
 	const headers: Record<string, string> = accept ? { accept } : {};
 	const signal = AbortSignal.timeout(15_000);
-	let response = await fetch(url, { headers, signal });
+	let response = await fetch(url, { method, headers, signal });
 	const authenticate = response.headers.get("www-authenticate") ?? "";
 	const challenge =
 		response.status === 401 ? parseBearerChallenge(authenticate) : null;
@@ -102,6 +103,7 @@ const registryFetch = async (
 				access_token?: string;
 			};
 			response = await fetch(url, {
+				method,
 				headers: {
 					...headers,
 					authorization: `Bearer ${token ?? access_token}`,
@@ -115,6 +117,7 @@ const registryFetch = async (
 		authenticate.toLowerCase().startsWith("basic")
 	) {
 		response = await fetch(url, {
+			method,
 			headers: { ...headers, authorization: basic(credentials) },
 			signal,
 		});
@@ -143,6 +146,25 @@ export const listRegistryTags = async (
 		path = next?.[1] ?? null;
 	}
 	return tags;
+};
+
+/**
+ * Digest a tag points to, with a HEAD request: Docker Hub counts manifest GETs
+ * against the pull rate limit, not HEADs.
+ */
+export const getRegistryDigest = async (
+	image: string,
+	credentials?: RegistryCredentials,
+) => {
+	const ref = parseImageReference(image);
+	const response = await registryFetch(
+		ref,
+		`manifests/${ref.reference}`,
+		MANIFEST_TYPES,
+		credentials,
+		"HEAD",
+	);
+	return response.headers.get("docker-content-digest");
 };
 
 const NODE_ARCH: Record<string, string> = { x64: "amd64", arm64: "arm64" };

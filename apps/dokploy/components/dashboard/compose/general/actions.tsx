@@ -2,6 +2,7 @@ import { Ban, CheckCircle2, RefreshCcw, Rocket, Terminal } from "lucide-react";
 import { useRouter } from "next/router";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 import { toast } from "sonner";
+import { DeployVersionSummary } from "@/components/dashboard/versions/show-version-history";
 import { DialogAction } from "@/components/shared/dialog-action";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -41,7 +42,15 @@ export const ComposeActions = ({ composeId }: Props) => {
 				{canDeploy && (
 					<DialogAction
 						title="Deploy Compose"
-						description="Are you sure you want to deploy this compose?"
+						description={
+							<span className="flex flex-col gap-3">
+								<span>Are you sure you want to deploy this compose?</span>
+								<DeployVersionSummary
+									serviceType="compose"
+									serviceId={composeId}
+								/>
+							</span>
+						}
 						type="default"
 						onClick={async () => {
 							await deploy({

@@ -33,7 +33,7 @@ interface VersionTag {
 	suffix: string;
 }
 
-const parseVersionTag = (tag: string): VersionTag | null => {
+export const parseVersionTag = (tag: string): VersionTag | null => {
 	const match = /^(v?)(\d+)(?:\.(\d+))?(?:\.(\d+))?([-_+][\w.-]*)?$/.exec(tag);
 	if (!match) return null;
 	return {
@@ -90,6 +90,24 @@ export const pickVersionTag = (
 		}
 	}
 	return best?.tag ?? null;
+};
+
+/** Tags above `current` written the same way (see pickVersionTag), highest first. */
+export const newerVersionTags = (current: string, tags: string[]) => {
+	const from = parseVersionTag(current);
+	if (!from) return [];
+	return tags
+		.map((tag) => ({ tag, version: parseVersionTag(tag) }))
+		.filter(
+			(c): c is { tag: string; version: VersionTag } =>
+				!!c.version &&
+				c.version.prefix === from.prefix &&
+				c.version.suffix === from.suffix &&
+				c.version.numbers.length === from.numbers.length &&
+				compareNumbers(c.version.numbers, from.numbers) > 0,
+		)
+		.sort((a, b) => compareNumbers(b.version.numbers, a.version.numbers))
+		.map((c) => c.tag);
 };
 
 export type ApplicationUpdateCheck =

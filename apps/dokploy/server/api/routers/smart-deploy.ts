@@ -12,12 +12,16 @@ import {
 	findDomainById,
 	findProposedFix,
 	getComposeVersionStatus,
+	getServiceVersionHistory,
 	getVersionStatus,
+	IS_CLOUD,
 	listRemoteCommits,
 	restartApplicationService,
 	runPreflight,
+	updateApplication,
 	validateFix,
 } from "@dokploy/server";
+import { splitImageName } from "@dokploy/server/auto-update/app-check";
 import {
 	checkServiceAccess,
 	checkServicePermissionAndAccess,
@@ -434,6 +438,80 @@ export const smartDeployRouter = createTRPCRouter({
 			});
 			return { deploymentId: deployment.deploymentId };
 		}),
+	/**
+	 * What runs, what ran before, what was published after and what Deploy
+	 * installs, for an application or a compose stack.
+	 */
+	getVersionHistory: protectedProcedure
+		.input(
+			z.object({
+				serviceType: z.enum(["application", "compose"]),
+				serviceId: z.string().min(1),
+				force: z.boolean().default(false),
+			}),
+		)
+		.query(async ({ input, ctx }) => {
+			await checkServiceAccess(ctx, input.serviceId, "read");
+			await assertServiceInOrganization(
+				input.serviceType,
+				input.serviceId,
+				ctx.session.activeOrganizationId,
+			);
+			return getServiceVersionHistory(input.serviceType, input.serviceId, {
+				force: input.force,
+			});
+		}),
+
+	/** Switches an image application to another tag of its image, then deploys it. */
+	deployImageTag: protectedProcedure
+		.input(
+			z.object({
+				applicationId: z.string().min(1),
+				tag: z
+					.string()
+					.trim()
+					.regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/, "Not an image tag"),
+			}),
+		)
+		.mutation(async ({ input, ctx }) => {
+			await checkServicePermissionAndAccess(ctx, input.applicationId, {
+				service: ["create"],
+				deployment: ["create"],
+			});
+			const application = await assertSameOrganization(
+				input.applicationId,
+				ctx.session.activeOrganizationId,
+			);
+			if (IS_CLOUD) {
+				throw new TRPCError({
+					code: "NOT_IMPLEMENTED",
+					message: "This action is not available on Dokploy Cloud",
+				});
+			}
+			if (application.sourceType !== "docker" || !application.dockerImage) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Deploying an image tag needs a Docker image source",
+				});
+			}
+			// Same repository, another tag: a digest pin would override the tag.
+			const image = `${splitImageName(application.dockerImage).name}:${input.tag}`;
+			await updateApplication(application.applicationId, {
+				dockerImage: image,
+			});
+			await enqueueApplicationJob(
+				{ ...application, dockerImage: image },
+				{ type: "deploy", titleLog: `Deploy ${image}` },
+			);
+			await audit(ctx, {
+				action: "deploy",
+				resourceType: "application",
+				resourceId: application.applicationId,
+				resourceName: application.appName,
+			});
+			return { image };
+		}),
+
 	/** The last commits of the configured branch, to pick one to deploy. */
 	listCommits: protectedProcedure
 		.input(

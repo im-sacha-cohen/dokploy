@@ -25,6 +25,14 @@ export {
 	KEPT_COMPOSE_VERSIONS,
 	redeployComposeVersion,
 } from "./compose";
+export {
+	getServiceVersionHistory,
+	type ImageLine,
+	type NewerItem,
+	type PastItem,
+	type ServiceVersionHistory,
+	type VersionChange,
+} from "./history";
 export { getRemoteHead, type RemoteHead } from "./remote-head";
 export { describeSource, sanitizeRepositoryUrl } from "./source";
 export { getVersionStatus, type VersionStatus } from "./status";

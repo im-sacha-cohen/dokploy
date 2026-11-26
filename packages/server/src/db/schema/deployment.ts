@@ -141,6 +141,8 @@ export const deployments = pgTable("deployment", {
 	imageId: text("imageId"),
 	imageTag: text("imageTag"),
 	imageDigest: text("imageDigest"),
+	/** The image reference an image application deployed (`ghost:5.82.0`). */
+	sourceImage: text("sourceImage"),
 	runningImageId: text("runningImageId"),
 	containerId: text("containerId"),
 	taskId: text("taskId"),

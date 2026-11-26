@@ -270,3 +270,23 @@ Limitations:
 - **Application**: head = v2, deploy of v1 from an upper-case full SHA (normalized).
 
 Unit tests: `__test__/smart-deploy/deploy-commit.test.ts`, `deploy-commit.real.test.ts` (real Git), `compose-versions.test.ts`, `commits.test.ts`. The GitHub, GitLab, Gitea and Bitbucket commit lists are not exercised locally (no provider account in the devbox).
+
+## Version history (2026-11-26)
+
+`smartDeploy.getVersionHistory({ serviceType, serviceId, force })`, for an application or a compose stack: what runs, what ran before, what was published after, and what Deploy installs. Shown in a **Versions** tab, as a line above the Deploy button and in its confirmation, and as a badge on each service card of the project page.
+
+What a version is depends on the source:
+- **Git with tags or releases**: the tag on the running commit (`v1.4.2`) or the nearest one before it on the branch (`v1.4.2 + 3 commits`). After it: newer releases with their notes (GitHub, GitLab, Gitea; tags only for Bitbucket and custom Git URLs, read with `git ls-remote --tags`), then the newer commits. Deploy installs the branch head.
+- **Git without tags**: `main @ abc1234`, and the newer commits.
+- **Docker image**: the deployed tag; for a moving tag (`latest`), the version tags pointing to the same image (`latest (5.83.0)`) and whether it was pushed again since it was pulled. After it: newer tags written the same way (`1.25.3-alpine` → `1.25.4-alpine`), with their date. Deploy pulls the same tag.
+- **Compose / template**: the same per service image, plus the Git part for a Git stack. A newer image tag is applied by editing the compose file.
+
+"Deploy this version" deploys a release's or a commit's SHA (`deployCommit`, `deployComposeCommit`), or switches an image application to another tag of the same image and deploys it (`deployImageTag`). Each image deployment records its image reference (`deployment.sourceImage`, migration 0208), so the history can name it.
+
+Limits:
+- Versions are named from the last 100 commits of the branch: an older commit keeps its short SHA rather than a guessed version.
+- Docker Hub tags come from Docker Hub's API (`hub.docker.com/v2`), which the pull rate limit does not count; other registries are read through the registry API, with `HEAD` requests for digests.
+- Git hosts and registries are asked at most every 10 minutes per service, sooner when a deployment starts or ends, or with "Check now".
+- Databases (Postgres, Redis…) and release notes for image applications are not covered.
+
+Unit tests: `__test__/smart-deploy/version-history.test.ts`. Checked on the devbox: Git applications and stacks, raw compose, `traefik/whoami:v1.10` → "Deploy this version" `v1.11` (recorded and named in the history), and on `github.com/traefik/whoami` (28 tags): an old commit named `v1.8.4`, a later one `v1.11.0 + 1 commit`, 11 newer releases found.

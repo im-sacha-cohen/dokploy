@@ -201,6 +201,9 @@ export const trackBuildArtifacts = (
 			data.imageId = image.id;
 			data.imageDigest = image.digest;
 		}
+		if (application.sourceType === "docker" && application.dockerImage) {
+			data.sourceImage = application.dockerImage;
+		}
 
 		const canTag =
 			image &&

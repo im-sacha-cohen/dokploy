@@ -37,6 +37,7 @@ import { ComposeFreeMonitoring } from "@/components/dashboard/monitoring/free/co
 import { ComposePaidMonitoring } from "@/components/dashboard/monitoring/paid/container/show-paid-compose-monitoring";
 import { AssignComposeNetworks } from "@/components/dashboard/networks/assign-compose-networks";
 import { TransferService } from "@/components/dashboard/shared/transfer-service";
+import { ShowVersionHistory } from "@/components/dashboard/versions/show-version-history";
 import { DashboardLayout } from "@/components/layouts/dashboard-layout";
 import { AdvanceBreadcrumb } from "@/components/shared/advance-breadcrumb";
 import { StatusTooltip } from "@/components/shared/status-tooltip";
@@ -70,7 +71,8 @@ type TabState =
 	| "containers"
 	| "monitoring"
 	| "volumeBackups"
-	| "smart-deploy";
+	| "smart-deploy"
+	| "versions";
 
 const Service = (
 	props: InferGetServerSidePropsType<typeof getServerSideProps>,
@@ -256,6 +258,9 @@ const Service = (
 													Smart Deploy
 												</TabsTrigger>
 											)}
+											{permissions?.deployment.read && (
+												<TabsTrigger value="versions">Versions</TabsTrigger>
+											)}
 											{permissions?.envVars.read && (
 												<TabsTrigger value="environment">
 													Environment
@@ -304,6 +309,14 @@ const Service = (
 									{permissions?.deployment.read && (
 										<TabsContent value="smart-deploy" className="w-full pt-2.5">
 											<ShowServiceSmartDeploy
+												serviceType="compose"
+												serviceId={composeId}
+											/>
+										</TabsContent>
+									)}
+									{permissions?.deployment.read && (
+										<TabsContent value="versions" className="w-full pt-2.5">
+											<ShowVersionHistory
 												serviceType="compose"
 												serviceId={composeId}
 											/>

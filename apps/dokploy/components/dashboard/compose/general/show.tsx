@@ -1,3 +1,4 @@
+import { DeployVersionSummary } from "@/components/dashboard/versions/show-version-history";
 import { Badge } from "@/components/ui/badge";
 import {
 	Card,
@@ -22,6 +23,8 @@ export const ShowGeneralCompose = ({ composeId }: Props) => {
 		},
 	);
 
+	const { data: permissions } = api.user.getPermissions.useQuery();
+
 	return (
 		<>
 			<Card className="bg-background">
@@ -38,6 +41,9 @@ export const ShowGeneralCompose = ({ composeId }: Props) => {
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-4 flex-wrap">
+					{permissions?.deployment.read && (
+						<DeployVersionSummary serviceType="compose" serviceId={composeId} />
+					)}
 					<ComposeActions composeId={composeId} />
 				</CardContent>
 			</Card>

@@ -38,6 +38,7 @@ import { AdvancedEnvironmentSelector } from "@/components/dashboard/project/adva
 import { DuplicateProject } from "@/components/dashboard/project/duplicate-project";
 import { EnvironmentVariables } from "@/components/dashboard/project/environment-variables";
 import { ProjectEnvironment } from "@/components/dashboard/projects/project-environment";
+import { ServiceVersionBadge } from "@/components/dashboard/versions/show-version-history";
 import {
 	LibsqlIcon,
 	MariadbIcon,
@@ -301,6 +302,7 @@ const EnvironmentPage = (
 	const { projectId, environmentId } = props;
 	const { data: auth } = api.user.get.useQuery();
 	const { data: permissions } = api.user.getPermissions.useQuery();
+	const canReadDeployments = permissions?.deployment.read ?? false;
 
 	const { data: environments } = api.environment.byProjectId.useQuery({
 		projectId: projectId,
@@ -1742,6 +1744,14 @@ const EnvironmentPage = (
 																					</span>
 																				</div>
 																			)}
+																			{canReadDeployments &&
+																				(service.type === "application" ||
+																					service.type === "compose") && (
+																					<ServiceVersionBadge
+																						serviceType={service.type}
+																						serviceId={service.id}
+																					/>
+																				)}
 																			<DateTooltip date={service.createdAt}>
 																				Created
 																			</DateTooltip>

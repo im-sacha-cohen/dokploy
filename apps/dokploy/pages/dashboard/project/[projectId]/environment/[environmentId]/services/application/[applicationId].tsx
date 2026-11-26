@@ -40,6 +40,7 @@ import { ContainerFreeMonitoring } from "@/components/dashboard/monitoring/free/
 import { ContainerPaidMonitoring } from "@/components/dashboard/monitoring/paid/container/show-paid-container-monitoring";
 import { AssignNetworks } from "@/components/dashboard/networks/assign-networks";
 import { TransferService } from "@/components/dashboard/shared/transfer-service";
+import { ShowVersionHistory } from "@/components/dashboard/versions/show-version-history";
 import { DashboardLayout } from "@/components/layouts/dashboard-layout";
 import { AdvanceBreadcrumb } from "@/components/shared/advance-breadcrumb";
 import { StatusTooltip } from "@/components/shared/status-tooltip";
@@ -70,6 +71,7 @@ type TabState =
 	| "advanced"
 	| "deployments"
 	| "smart-deploy"
+	| "versions"
 	| "domains"
 	| "monitoring"
 	| "preview-deployments"
@@ -262,6 +264,9 @@ const Service = (
 													Smart Deploy
 												</TabsTrigger>
 											)}
+											{permissions?.deployment.read && (
+												<TabsTrigger value="versions">Versions</TabsTrigger>
+											)}
 											{permissions?.envVars.read && (
 												<TabsTrigger value="environment">
 													Environment
@@ -306,6 +311,14 @@ const Service = (
 										</TabsList>
 									</div>
 
+									{permissions?.deployment.read && (
+										<TabsContent value="versions" className="w-full pt-2.5">
+											<ShowVersionHistory
+												serviceType="application"
+												serviceId={applicationId}
+											/>
+										</TabsContent>
+									)}
 									<TabsContent value="general">
 										<div className="flex flex-col gap-4 pt-2.5">
 											<ShowGeneralApplication applicationId={applicationId} />

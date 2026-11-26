@@ -11,6 +11,7 @@ import { Tooltip as TooltipPrimitive } from "radix-ui";
 import { toast } from "sonner";
 import { ShowBuildChooseForm } from "@/components/dashboard/application/build/show";
 import { ShowProviderForm } from "@/components/dashboard/application/general/generic/show";
+import { DeployVersionSummary } from "@/components/dashboard/versions/show-version-history";
 import { DialogAction } from "@/components/shared/dialog-action";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,15 +56,31 @@ export const ShowGeneralApplication = ({ applicationId }: Props) => {
 	return (
 		<>
 			<Card className="bg-background">
-				<CardHeader>
+				<CardHeader className="gap-2">
 					<CardTitle className="text-xl">Deploy Settings</CardTitle>
+					{permissions?.deployment.read && (
+						<DeployVersionSummary
+							serviceType="application"
+							serviceId={applicationId}
+						/>
+					)}
 				</CardHeader>
 				<CardContent className="grid grid-cols-2 lg:flex lg:flex-row lg:flex-wrap gap-4">
 					<TooltipProvider delayDuration={0} disableHoverableContent={false}>
 						{canDeploy && (
 							<DialogAction
 								title="Deploy Application"
-								description="Are you sure you want to deploy this application?"
+								description={
+									<span className="flex flex-col gap-3">
+										<span>
+											Are you sure you want to deploy this application?
+										</span>
+										<DeployVersionSummary
+											serviceType="application"
+											serviceId={applicationId}
+										/>
+									</span>
+								}
 								type="default"
 								onClick={async () => {
 									await deploy({

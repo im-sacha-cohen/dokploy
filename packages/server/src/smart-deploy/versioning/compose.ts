@@ -28,6 +28,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { quote } from "shell-quote";
 import { stringify } from "yaml";
 import { safely, updateTracking } from "./capture";
+import { composeBuilds, resolveGitRef } from "./compose-builds";
 import { runOn, SHA_PATTERN } from "./shell";
 import { describeSource } from "./source";
 
@@ -166,6 +167,29 @@ export const snapshotComposeSource = (deploymentId: string, compose: Compose) =>
 		);
 	});
 
+/** The compose file Dokploy deploys: in the database, or in the clone. */
+export const readComposeFile = async (compose: Compose) => {
+	if (!isGitCompose(compose)) return compose.composeFile;
+	const read = await runOn(
+		compose.serverId,
+		`cat ${quote([getComposePath(compose)])}`,
+	);
+	return read.ok ? read.stdout : null;
+};
+
+/** Commit each service built from a remote Git context was built from. */
+const builtCommits = async (compose: Compose) => {
+	const commits = new Map<string, string | null>();
+	for (const build of composeBuilds(await readComposeFile(compose))) {
+		if (build.kind !== "git") continue;
+		commits.set(
+			build.service,
+			(await resolveGitRef(compose.serverId, build)).sha,
+		);
+	}
+	return commits;
+};
+
 /**
  * Called once `docker compose up` succeeded: records the image each service
  * runs, tags it so it survives later deploys, and the commit of the clone.
@@ -194,6 +218,7 @@ export const trackComposeArtifacts = (deploymentId: string, compose: Compose) =>
 			const containers = await listComposeContainers(compose, {
 				runningOnly: false,
 			});
+			const commits = await builtCommits(compose);
 			const images: ComposeServiceImage[] = [];
 			for (const [service, { imageId, image }] of containers.services) {
 				const tag = composeImageTag(compose.appName, deploymentId, service);
@@ -205,6 +230,9 @@ export const trackComposeArtifacts = (deploymentId: string, compose: Compose) =>
 					image,
 					imageId,
 					tag: tagged?.ok ? tag : null,
+					...(commits.has(service)
+						? { sourceCommit: commits.get(service) }
+						: {}),
 				});
 			}
 			if (images.length > 0) data.composeImages = images;
@@ -306,6 +334,8 @@ export interface ComposeVersion {
 		image: string;
 		imageId: string;
 		retained: boolean;
+		/** Built from a remote Git context: the commit, when it was recorded. */
+		sourceCommit: string | null;
 	}[];
 	/** Whether this deployment's images can be run again without rebuilding. */
 	redeployable: boolean;
@@ -367,6 +397,7 @@ const toComposeVersion = (
 			image: s.image,
 			imageId: s.imageId,
 			retained: !!s.tag,
+			sourceCommit: s.sourceCommit ?? null,
 		})),
 		redeployable:
 			!unavailable &&

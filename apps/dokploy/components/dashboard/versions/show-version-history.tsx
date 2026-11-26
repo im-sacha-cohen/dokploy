@@ -498,6 +498,73 @@ export const ShowVersionHistory = ({
 							</Section>
 						))}
 
+						{data.builds.map((build) => (
+							<Section
+								key={`build:${build.service}`}
+								title={`${build.service} is built from Git: ${build.source}`}
+								icon={<GitCommitHorizontal className="size-4" />}
+							>
+								{build.error ? (
+									<p className="text-sm text-muted-foreground">
+										Could not read the repository: {build.error}
+									</p>
+								) : (
+									<>
+										<p className="text-sm text-muted-foreground">
+											{[
+												build.current ? `Built: ${build.current.label}` : null,
+												build.pinned
+													? "The build context pins this commit."
+													: `Deploy rebuilds it from ${build.next.label}.`,
+											]
+												.filter(Boolean)
+												.join(" · ")}
+										</p>
+										{build.approximate && build.current?.detail && (
+											<p className="text-xs text-muted-foreground">
+												{build.current.detail}
+											</p>
+										)}
+										{build.releases.length > 0 && (
+											<div className="flex flex-col gap-2">
+												{build.releases.map((item) => (
+													<NewerRow
+														key={item.key}
+														serviceType={serviceType}
+														serviceId={serviceId}
+														item={item}
+													/>
+												))}
+											</div>
+										)}
+										{build.commits.length > 0 ? (
+											<div className="flex flex-col gap-2">
+												{build.commits.map((item) => (
+													<NewerRow
+														key={item.key}
+														serviceType={serviceType}
+														serviceId={serviceId}
+														item={item}
+													/>
+												))}
+												{build.moreCommits && (
+													<p className="text-xs text-muted-foreground">
+														The built commit is older than the{" "}
+														{build.commits.length} commits read: there are more.
+													</p>
+												)}
+											</div>
+										) : (
+											!build.pinned && (
+												<p className="text-sm text-muted-foreground">
+													No new commit on {build.ref ?? "the default branch"}.
+												</p>
+											)
+										)}
+									</>
+								)}
+							</Section>
+						))}
 						{data.sourceKind === "git" && (
 							<Section
 								title={data.releasesSupported ? "Newer releases" : "Newer tags"}

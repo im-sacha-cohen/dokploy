@@ -280,6 +280,7 @@ What a version is depends on the source:
 - **Git without tags**: `main @ abc1234`, and the newer commits.
 - **Docker image**: the deployed tag; for a moving tag (`latest`), the version tags pointing to the same image (`latest (5.83.0)`) and whether it was pushed again since it was pulled. After it: newer tags written the same way (`1.25.3-alpine` → `1.25.4-alpine`), with their date. Deploy pulls the same tag.
 - **Compose / template**: the same per service image, plus the Git part for a Git stack. A newer image tag is applied by editing the compose file.
+- **Compose service built from a remote Git context** (`build.context: https://github.com/owner/repo.git#branch`): read as a Git version of that repository and ref, never looked up in a registry. Each deployment records the commit the ref pointed to right after the build (`composeImages[].sourceCommit`, `git ls-remote`); for a deployment made before that, the commits dated after it are listed instead. Deploy rebuilds from the ref's head (`docker compose up --build`).
 
 "Deploy this version" deploys a release's or a commit's SHA (`deployCommit`, `deployComposeCommit`), or switches an image application to another tag of the same image and deploys it (`deployImageTag`). Each image deployment records its image reference (`deployment.sourceImage`, migration 0208), so the history can name it.
 

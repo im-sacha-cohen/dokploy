@@ -26,6 +26,7 @@ export {
 	redeployComposeVersion,
 } from "./compose";
 export {
+	type BuildLine,
 	getServiceVersionHistory,
 	type ImageLine,
 	type NewerItem,

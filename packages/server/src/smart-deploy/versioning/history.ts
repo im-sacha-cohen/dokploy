@@ -7,7 +7,18 @@ import type { RegistryCredentials } from "@dokploy/server/services/image-update"
 import { desc, eq } from "drizzle-orm";
 import { quote } from "shell-quote";
 import type { CommitSource } from "./commits";
-import { getComposeVersionStatus, isGitCompose } from "./compose";
+import {
+	type ComposeVersion,
+	getComposeVersionStatus,
+	isGitCompose,
+	readComposeFile,
+} from "./compose";
+import {
+	composeBuilds,
+	describeGitBuild,
+	type GitBuild,
+	resolveGitRef,
+} from "./compose-builds";
 import { getImageVersions, type ImageVersions } from "./image-versions";
 import {
 	describeCommit,
@@ -15,7 +26,7 @@ import {
 	getGitVersionData,
 	newerThan,
 } from "./releases";
-import { runOn } from "./shell";
+import { runOn, SHA_PATTERN } from "./shell";
 import { getVersionStatus } from "./status";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -63,6 +74,28 @@ export interface ImageLine {
 	error: string | null;
 }
 
+/** A compose service whose image is built from a remote Git repository. */
+export interface BuildLine {
+	service: string;
+	/** `https://github.com/owner/repo.git#branch`, without credentials. */
+	source: string;
+	ref: string | null;
+	current: VersionLine | null;
+	next: { label: string; change: VersionChange };
+	releases: NewerItem[];
+	commits: NewerItem[];
+	moreCommits: boolean;
+	releasesSupported: boolean;
+	/**
+	 * The built commit was not recorded (deployed before Dokploy recorded
+	 * it): newer commits are the ones dated after the deployment.
+	 */
+	approximate: boolean;
+	/** The context pins a commit: nothing newer can come from it. */
+	pinned: boolean;
+	error: string | null;
+}
+
 export interface PastItem {
 	deploymentId: string;
 	createdAt: string;
@@ -96,6 +129,7 @@ export interface ServiceVersionHistory {
 	/** Git releases need a Git host API (GitHub, GitLab, Gitea). */
 	releasesSupported: boolean;
 	images: ImageLine[];
+	builds: BuildLine[];
 	past: PastItem[];
 	/** Sources that could not be read, in plain words. */
 	problems: string[];
@@ -312,6 +346,7 @@ const buildApplicationHistory = async (
 			moreCommits: false,
 			releasesSupported: false,
 			images: [line],
+			builds: [],
 			past: past((id) => {
 				const row = byId.get(id);
 				return row?.sourceImage ?? null;
@@ -339,6 +374,7 @@ const buildApplicationHistory = async (
 			moreCommits: false,
 			releasesSupported: false,
 			images: [],
+			builds: [],
 			past: past(() => null),
 			problems,
 			checkedAt: new Date().toISOString(),
@@ -383,6 +419,7 @@ const buildApplicationHistory = async (
 		moreCommits: git?.moreCommits ?? false,
 		releasesSupported: git?.releasesSupported ?? false,
 		images: [],
+		builds: [],
 		past: past(
 			(id) => git?.labelOf(byId.get(id)?.builtCommitSha ?? null) ?? null,
 		),
@@ -423,6 +460,110 @@ const normalizeRepo = (name: string) =>
 		.replace(/^(docker\.io|index\.docker\.io|registry-1\.docker\.io)\//, "")
 		.replace(/^library\//, "");
 
+const formatDay = (date: string) => date.slice(0, 10);
+
+const buildLine = async (
+	build: GitBuild,
+	serverId: string | null,
+	current: ComposeVersion | null,
+): Promise<{ line: BuildLine; labelOf: (sha: string | null) => string }> => {
+	const base = {
+		service: build.service,
+		source: describeGitBuild(build),
+		ref: build.ref,
+		releases: [],
+		commits: [],
+		moreCommits: false,
+		releasesSupported: false,
+		approximate: false,
+		pinned: false,
+		error: null,
+	};
+	const deployedAt = current?.createdAt ?? null;
+	const notRecorded = (ref: string | null) =>
+		`${ref ?? "default branch"} (commit not recorded)`;
+	if (build.ref && SHA_PATTERN.test(build.ref)) {
+		const label = `@ ${build.ref.slice(0, 7)}`;
+		return {
+			line: {
+				...base,
+				pinned: true,
+				current: { label, detail: null, date: deployedAt, sha: build.ref },
+				next: { label, change: "same" },
+			},
+			labelOf: () => label,
+		};
+	}
+	const branch = build.ref ?? (await resolveGitRef(serverId, build)).branch;
+	if (!branch) {
+		return {
+			line: {
+				...base,
+				current: null,
+				next: { label: base.source, change: "unknown" },
+				error: "the repository's default branch could not be read",
+			},
+			labelOf: (sha) => (sha ? `@ ${sha.slice(0, 7)}` : notRecorded(null)),
+		};
+	}
+	const data = await getGitVersionData({
+		sourceType: "git",
+		customGitUrl: build.url,
+		customGitBranch: branch,
+		customGitSSHKeyId: null,
+		serverId,
+		buildServerId: null,
+	} as unknown as CommitSource);
+	if (data.status !== "ok") {
+		return {
+			line: {
+				...base,
+				current: null,
+				next: { label: branch, change: "unknown" },
+				error: data.reason,
+			},
+			labelOf: (sha) =>
+				sha ? `${branch} @ ${sha.slice(0, 7)}` : notRecorded(branch),
+		};
+	}
+	const recorded =
+		current?.services.find((s) => s.service === build.service)?.sourceCommit ??
+		null;
+	const git = gitPart(data, recorded, deployedAt);
+	const approximate = !recorded;
+	return {
+		line: {
+			...base,
+			current:
+				git.current ??
+				(deployedAt
+					? {
+							label: `${branch}, built ${formatDay(deployedAt)}`,
+							detail:
+								"The built commit was not recorded for this deployment: the commits listed after it are the ones dated after it.",
+							date: deployedAt,
+							sha: null,
+						}
+					: null),
+			next: {
+				label: git.next.label,
+				change: approximate
+					? git.commits.length > 0
+						? "newer"
+						: "same"
+					: git.next.change,
+			},
+			// Commits of another repository cannot be deployed as the stack's own.
+			releases: git.releases.map((r) => ({ ...r, deploy: null })),
+			commits: git.commits.map((c) => ({ ...c, deploy: null })),
+			moreCommits: git.moreCommits,
+			releasesSupported: git.releasesSupported,
+			approximate,
+		},
+		labelOf: (sha) => (sha ? (git.labelOf(sha) ?? sha) : notRecorded(branch)),
+	};
+};
+
 const buildComposeHistory = async (
 	composeId: string,
 ): Promise<ServiceVersionHistory> => {
@@ -446,7 +587,23 @@ const buildComposeHistory = async (
 			? gitPart(data, currentSha, current?.createdAt ?? null)
 			: null;
 
-	// Images Dokploy built from the stack's own Dockerfiles have no registry.
+	const builds = composeBuilds(await readComposeFile(compose));
+	const built = new Set(builds.map((b) => b.service));
+	const buildResults = await Promise.all(
+		builds
+			.filter((b): b is Extract<typeof b, { kind: "git" }> => b.kind === "git")
+			.map(async (b) => ({
+				service: b.service,
+				...(await buildLine(b, compose.serverId, current)),
+			})),
+	);
+	const buildLines = buildResults.map((r) => r.line);
+	for (const line of buildLines) {
+		if (line.error) problems.push(`${line.service}: ${line.error}`);
+	}
+
+	// Built images have no registry to ask: Git builds are read from their
+	// repository, and images built from the stack's own files have no version.
 	const services = (
 		status.live.collected && status.live.services.length > 0
 			? status.live.services
@@ -454,6 +611,7 @@ const buildComposeHistory = async (
 	).filter(
 		(s) =>
 			s.image &&
+			!built.has(s.service) &&
 			!s.image.startsWith("sha256:") &&
 			!s.image.startsWith(`${compose.appName}-`) &&
 			!s.image.startsWith(`${compose.appName}_`),
@@ -483,19 +641,44 @@ const buildComposeHistory = async (
 
 	const rebuilt = images.filter((i) => i.rebuilt === true);
 	const newerImages = images.reduce((n, i) => n + i.newer.length, 0);
+	const movedBuilds = buildLines.filter((b) => b.next.change === "newer");
 	let change: VersionChange = git?.next.change ?? (isGit ? "unknown" : "same");
-	if (rebuilt.length > 0) change = "newer";
+	if (rebuilt.length > 0 || movedBuilds.length > 0) change = "newer";
 	const reasons = [
 		rebuilt.length > 0
 			? `${plural(rebuilt.length, "image")} pushed again since they were pulled (${rebuilt.map((i) => i.service).join(", ")}): deploying pulls the new builds.`
 			: null,
-		!isGit ? "Same compose file: the same image tags." : null,
+		...movedBuilds.map(
+			(b) =>
+				`${b.service}: ${plural(b.commits.length, "new commit")} on ${b.ref ?? "the default branch"}${b.approximate ? " since the last deployment" : ""}: deploying rebuilds it from there.`,
+		),
+		!isGit && buildLines.length === 0
+			? "Same compose file: the same image tags."
+			: null,
 	].filter(Boolean);
 
-	const servicesLabel = (list: { service: string; image: string }[]) =>
-		list
-			.map((s) => `${s.service}: ${splitImageName(s.image).tag ?? s.image}`)
-			.join(", ");
+	// Each deployment's own built commit names its builds, not the current one.
+	const servicesLabel = (
+		list: { service: string; image: string; sourceCommit?: string | null }[],
+		useCurrent = false,
+	) =>
+		[
+			...list
+				.filter((s) => !built.has(s.service))
+				.map((s) => `${s.service}: ${splitImageName(s.image).tag ?? s.image}`),
+			...buildResults.map((r) => {
+				const label = useCurrent
+					? r.line.current?.label
+					: r.labelOf(
+							list.find((s) => s.service === r.service)?.sourceCommit ?? null,
+						);
+				return `${r.service}: ${label ?? r.labelOf(null)}`;
+			}),
+		].join(", ");
+	const liveServices = status.live.services.map((s) => ({
+		service: s.service,
+		image: s.image,
+	}));
 
 	return {
 		serviceType: "compose",
@@ -504,18 +687,30 @@ const buildComposeHistory = async (
 			git?.current ??
 			(current
 				? {
-						label: servicesLabel(current.services) || "compose file",
+						label:
+							servicesLabel(
+								current.services.length > 0 ? current.services : liveServices,
+								true,
+							) || "compose file",
 						detail: null,
 						date: current.versionCreatedAt,
 						sha: currentSha,
 					}
 				: null),
 		next: {
-			label: git?.next.label ?? "the current compose file",
+			label:
+				git?.next.label ??
+				(buildLines.length > 0
+					? buildLines.map((b) => `${b.service}: ${b.next.label}`).join(", ")
+					: "the current compose file"),
 			change,
 			reason: reasons.join(" ") || null,
-			newerReleases: git?.releases.length ?? 0,
-			newerCommits: git?.commits.length ?? 0,
+			newerReleases:
+				(git?.releases.length ?? 0) +
+				buildLines.reduce((n, b) => n + b.releases.length, 0),
+			newerCommits:
+				(git?.commits.length ?? 0) +
+				buildLines.reduce((n, b) => n + b.commits.length, 0),
 			newerImages,
 		},
 		releases: git?.releases ?? [],
@@ -523,6 +718,7 @@ const buildComposeHistory = async (
 		moreCommits: git?.moreCommits ?? false,
 		releasesSupported: git?.releasesSupported ?? false,
 		images,
+		builds: buildLines,
 		past: status.history.slice(0, PAST_LIMIT).map((d) => ({
 			deploymentId: d.deploymentId,
 			createdAt: d.createdAt,

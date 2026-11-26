@@ -57,6 +57,8 @@ export interface ComposeServiceImage {
 	imageId: string;
 	/** Retained tag that can be run again, null once pruned or if tagging failed. */
 	tag: string | null;
+	/** For an image built from a remote Git context: the commit it was built from. */
+	sourceCommit?: string | null;
 }
 
 export interface DeploymentVerification {

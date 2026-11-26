@@ -1,4 +1,8 @@
 import { newerVersionTags } from "@dokploy/server/auto-update/app-check";
+import {
+	composeBuilds,
+	parseGitContext,
+} from "@dokploy/server/smart-deploy/versioning/compose-builds";
 import { getImageVersions } from "@dokploy/server/smart-deploy/versioning/image-versions";
 import {
 	compareTagsDesc,
@@ -277,5 +281,69 @@ describe("Image tags", () => {
 		).toMatchObject({
 			status: "not_applicable",
 		});
+	});
+});
+
+describe("Compose services built from Git", () => {
+	it("reads Docker's remote Git contexts", () => {
+		expect(
+			parseGitContext(
+				"https://github.com/im-sacha-cohen/sftpgo.git#feat/console-ui",
+			),
+		).toEqual({
+			url: "https://github.com/im-sacha-cohen/sftpgo.git",
+			ref: "feat/console-ui",
+			subdir: null,
+		});
+		expect(parseGitContext("https://github.com/a/b.git#v1.2.0:docker")).toEqual(
+			{
+				url: "https://github.com/a/b.git",
+				ref: "v1.2.0",
+				subdir: "docker",
+			},
+		);
+		expect(parseGitContext("git@github.com:a/b.git")).toMatchObject({
+			ref: null,
+		});
+		expect(parseGitContext("github.com/a/b")).toMatchObject({
+			url: "https://github.com/a/b",
+		});
+	});
+
+	it("does not take local folders or tarballs for Git", () => {
+		expect(parseGitContext(".")).toBeNull();
+		expect(parseGitContext("./app")).toBeNull();
+		expect(parseGitContext("https://example.com/context.tar.gz")).toBeNull();
+	});
+
+	it("lists which services build, and from where", () => {
+		const file = [
+			"services:",
+			"  sftpgo:",
+			"    build:",
+			"      context: https://github.com/im-sacha-cohen/sftpgo.git#feat/console-ui",
+			"    image: sftpgo-console:latest",
+			"  web:",
+			"    build: ./web",
+			"  db:",
+			"    image: postgres:16",
+		].join("\n");
+		expect(composeBuilds(file)).toEqual([
+			{
+				kind: "git",
+				service: "sftpgo",
+				url: "https://github.com/im-sacha-cohen/sftpgo.git",
+				ref: "feat/console-ui",
+				subdir: null,
+			},
+			{ kind: "local", service: "web" },
+		]);
+		expect(composeBuilds("not: [valid")).toEqual([]);
+	});
+
+	it("without the built commit, counts the commits dated after the deployment", () => {
+		const newer = newerThan(null, data(), "2026-11-17T12:00:00Z");
+		expect(newer.commits.map((x) => x.sha)).toEqual([c(0), c(1), c(2)]);
+		expect(newer.moreCommits).toBe(false);
 	});
 });

@@ -403,11 +403,16 @@ export const newerThan = (
 		? data.commits.findIndex((c) => c.sha === currentSha)
 		: -1;
 	const known = index !== -1;
-	const commits = known ? data.commits.slice(0, index) : data.commits;
+	const since = currentDate ? Date.parse(currentDate) : Number.NaN;
+	// Without the running commit, the commits dated after it was deployed.
+	const commits = known
+		? data.commits.slice(0, index)
+		: !currentSha && Number.isFinite(since)
+			? data.commits.filter((c) => !c.date || Date.parse(c.date) > since)
+			: data.commits;
 	const position = new Map(data.commits.map((c, i) => [c.sha, i]));
 	const shaOf = new Map(data.tags.map((t) => [t.name, t.sha]));
 	const currentTag = currentSha ? tagsBySha(data.tags).get(currentSha) : null;
-	const since = currentDate ? Date.parse(currentDate) : Number.NaN;
 
 	const candidates: NewerGitVersion[] = data.releasesSupported
 		? data.releases.map((r) => ({

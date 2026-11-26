@@ -6,7 +6,8 @@ import { isHttpsRequest, secureSetCookie } from "@/lib/secure-cookies";
 // Disallow body parsing, we will parse it manually
 export const config = { api: { bodyParser: false } };
 
-const handler = toNodeHandler(auth.handler);
+// Through auth on each call: the instance is rebuilt when the MCP URL changes.
+const handler = toNodeHandler((request: Request) => auth.handler(request));
 
 // Mark the session cookie as Secure when the request comes over HTTPS
 export default function authHandler(req: IncomingMessage, res: ServerResponse) {

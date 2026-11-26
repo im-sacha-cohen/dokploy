@@ -1,3 +1,4 @@
+import { setPanelMcpResource } from "@dokploy/server/mcp/config";
 import { mcpOAuthPlugins } from "@dokploy/server/mcp/oauth-plugins";
 import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
@@ -18,6 +19,7 @@ describe("MCP OAuth plugins", () => {
 		env.NODE_ENV = "production";
 	});
 	afterEach(() => {
+		setPanelMcpResource(null);
 		env.DOKPLOY_MCP_RESOURCE_URL = previous.url;
 		env.NODE_ENV = previous.nodeEnv;
 	});
@@ -45,5 +47,13 @@ describe("MCP OAuth plugins", () => {
 		await expect(
 			authWith(plugins).api.getSession({ headers: new Headers() }),
 		).resolves.toBeNull();
+	});
+
+	it("issues for the panel domain when only that is set", () => {
+		env.DOKPLOY_MCP_RESOURCE_URL = "";
+		setPanelMcpResource("https://panel.example.com/mcp");
+		expect(mcpOAuthPlugins()[0]?.options).toMatchObject({
+			jwt: { issuer: "https://panel.example.com/api/auth" },
+		});
 	});
 });

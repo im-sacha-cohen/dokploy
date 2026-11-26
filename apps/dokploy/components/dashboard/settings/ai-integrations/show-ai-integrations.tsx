@@ -89,7 +89,8 @@ const SettingsCard = ({
 			<CardContent className="flex flex-col gap-6">
 				{!settings.configured && (
 					<AlertBlock type="warning">
-						The public MCP URL is not configured. Set{" "}
+						The public MCP URL is not configured. Give the panel a domain with
+						HTTPS in Settings &gt; Web Server, or set{" "}
 						<code>DOKPLOY_MCP_RESOURCE_URL</code> (for example{" "}
 						<code>https://dokploy.example.com/mcp</code>) and restart Dokploy.
 					</AlertBlock>

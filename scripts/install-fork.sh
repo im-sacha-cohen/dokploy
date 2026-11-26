@@ -9,7 +9,8 @@
 #   and /etc/dokploy, then switches the `dokploy` service to the image. If the
 #   new image does not start, the service goes back to what ran before.
 # Options:
-#   --domain <host>   public HTTPS host of the panel; enables /mcp at https://<host>/mcp
+#   --domain <host>   public HTTPS host of the panel, for /mcp at https://<host>/mcp
+#                     (default: the panel domain set in Settings › Web Server)
 #   --image <ref>     image to run (default: ghcr.io/im-sacha-cohen/dokploy:smart-deploy)
 #   --rollback        go back to the official image recorded before the first switch
 # Environment: DOKPLOY_FORK_WAIT_TRIES (default 90) health checks, 5 s apart.
@@ -178,7 +179,7 @@ if [ -n "$DOMAIN" ]; then
 	log "  1. Make sure the panel is served on https://$DOMAIN (Settings › Web Server › Domain)."
 	log "  2. Enable it in Settings › AI Integrations, then add the URL as a connector in claude.ai."
 else
-	log "MCP is off until you set the panel's HTTPS domain and re-run with --domain <host>."
+	log "MCP: https://<panel domain>/mcp once the panel has a domain with HTTPS (Settings › Web Server)."
 fi
 log "From now on, Settings › Web Server › Update installs the latest build of $IMAGE_REPO:$IMAGE_TAG."
 log "Roll back with: curl -sSL $SCRIPT_URL | sudo bash -s -- --rollback"

@@ -29,8 +29,9 @@ What the script does:
 - Sets `DOKPLOY_MCP_RESOURCE_URL=https://<domain>/mcp`, then waits until
   Dokploy answers.
 
-`--domain` is the panel's public HTTPS host. Leave it out on a fresh server,
-set the domain in Settings › Web Server, then run the script again with it.
+`--domain` is the panel's public HTTPS host. It is optional: without it, the
+MCP uses the domain set in Settings › Web Server once HTTPS is on for it.
+Pass `--domain` when the public host differs (behind a proxy, for example).
 
 Roll back to the recorded official image:
 
@@ -122,7 +123,8 @@ Use `ghcr.io/<you>/dokploy:smart-deploy` for option B, with
   image to follow (see step 8). `install-fork.sh` sets them for you.
 
 - `DOKPLOY_MCP_RESOURCE_URL` must be the exact public URL of `/mcp`. Without
-  it, `/mcp` answers 503: the MCP server is off, the rest works.
+  it, the panel domain from Settings › Web Server is used if it has HTTPS;
+  with neither, `/mcp` answers 503: the MCP server is off, the rest works.
 - Migrations run at startup. Follow them with:
 
 ```bash

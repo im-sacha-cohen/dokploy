@@ -43,6 +43,7 @@ import {
 	readMonitoringConfig,
 	readPorts,
 	recreateDirectory,
+	refreshMcpAuth,
 	reloadDockerResource,
 	sendDockerCleanupNotifications,
 	setupGPUSupport,
@@ -382,6 +383,7 @@ export const settingsRouter = createTRPCRouter({
 			}
 
 			updateServerTraefik(settings, input.host);
+			await refreshMcpAuth();
 			if (input.letsEncryptEmail) {
 				updateLetsEncryptEmail(input.letsEncryptEmail);
 			}

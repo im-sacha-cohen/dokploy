@@ -40,17 +40,55 @@ export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const DEV_RESOURCE = "http://localhost:3000/mcp";
 
+const globalForMcp = globalThis as unknown as {
+	__dokployPanelMcpResource?: string | null;
+};
+
 /**
- * Public URL of the MCP endpoint, used as the OAuth audience (RFC 8707).
- * Must be configured explicitly in production: guessing it from request
- * headers would let a spoofed Host header choose the audience.
+ * MCP URL derived from the panel domain saved in Settings > Web Server, so
+ * the MCP works without DOKPLOY_MCP_RESOURCE_URL. HTTPS only: OAuth issuers
+ * must be https, and a plain-http domain usually sits behind a proxy whose
+ * public scheme Dokploy cannot know.
  */
-export const getMcpResourceUrls = (): string[] => {
-	const configured = (process.env.DOKPLOY_MCP_RESOURCE_URL ?? "")
+export const panelMcpResource = (
+	settings: { host?: string | null; https?: boolean | null } | null | undefined,
+): string | null => {
+	const host = settings?.host?.trim().toLowerCase().replace(/\/+$/, "");
+	if (!host || !settings?.https) return null;
+	try {
+		const url = new URL(`https://${host}/mcp`);
+		return url.host === host ? url.toString() : null;
+	} catch {
+		return null;
+	}
+};
+
+/** Kept on globalThis: this package is bundled twice (server.ts and Next.js). */
+export const getPanelMcpResource = () =>
+	globalForMcp.__dokployPanelMcpResource ?? null;
+
+export const setPanelMcpResource = (resource: string | null) => {
+	globalForMcp.__dokployPanelMcpResource = resource;
+};
+
+const configuredResourceUrls = () =>
+	(process.env.DOKPLOY_MCP_RESOURCE_URL ?? "")
 		.split(",")
 		.map((u) => u.trim().replace(/\/+$/, ""))
 		.filter(Boolean);
+
+export const isMcpResourceFromEnv = () => configuredResourceUrls().length > 0;
+
+/**
+ * Public URL of the MCP endpoint, used as the OAuth audience (RFC 8707):
+ * DOKPLOY_MCP_RESOURCE_URL, else the panel domain. Never guessed from
+ * request headers: a spoofed Host header would choose the audience.
+ */
+export const getMcpResourceUrls = (): string[] => {
+	const configured = configuredResourceUrls();
 	if (configured.length > 0) return configured;
+	const panel = getPanelMcpResource();
+	if (panel) return [panel];
 	return process.env.NODE_ENV === "production" ? [] : [DEV_RESOURCE];
 };
 

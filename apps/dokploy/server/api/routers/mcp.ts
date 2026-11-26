@@ -266,7 +266,9 @@ export const mcpRouter = createTRPCRouter({
 		checks.push({
 			name: "MCP URL configured",
 			ok: !!resource,
-			detail: resource ?? "DOKPLOY_MCP_RESOURCE_URL is not set",
+			detail:
+				resource ??
+				"No HTTPS panel domain in Settings > Web Server and DOKPLOY_MCP_RESOURCE_URL is not set",
 		});
 		const settings = await getMcpSettings(ctx.session.activeOrganizationId);
 		checks.push({

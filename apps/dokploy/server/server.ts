@@ -10,6 +10,7 @@ import {
 	initializeNetwork,
 	initSchedules,
 	initVolumeBackupsCronJobs,
+	refreshMcpAuth,
 	restoreInterruptedTraefik,
 	sendDokployRestartNotifications,
 	setupDirectories,
@@ -59,6 +60,12 @@ void app.prepare().then(async () => {
 		setupSandboxExecWebSocketServer(server);
 		if (!IS_CLOUD) {
 			setupDockerStatsMonitoringSocketServer(server);
+		}
+
+		if (!IS_CLOUD) {
+			await refreshMcpAuth().catch((error) => {
+				console.error("Failed to read the panel domain for MCP:", error);
+			});
 		}
 
 		server.listen(PORT, HOST);

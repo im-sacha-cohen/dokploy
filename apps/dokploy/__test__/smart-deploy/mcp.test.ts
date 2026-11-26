@@ -3,6 +3,8 @@ import {
 	getMcpIssuer,
 	getMcpResourceUrls,
 	MCP_SCOPES,
+	panelMcpResource,
+	setPanelMcpResource,
 } from "@dokploy/server/mcp/config";
 import { isMcpScope } from "@dokploy/server/mcp/grants";
 import {
@@ -95,6 +97,58 @@ describe("MCP configuration", () => {
 		} finally {
 			env.NODE_ENV = nodeEnv;
 		}
+	});
+});
+
+describe("MCP URL from the panel domain", () => {
+	const env = process.env as Record<string, string | undefined>;
+	const previous = { url: env.DOKPLOY_MCP_RESOURCE_URL, nodeEnv: env.NODE_ENV };
+	beforeEach(() => {
+		env.NODE_ENV = "production";
+		env.DOKPLOY_MCP_RESOURCE_URL = "";
+	});
+	afterEach(() => {
+		setPanelMcpResource(null);
+		env.DOKPLOY_MCP_RESOURCE_URL = previous.url;
+		env.NODE_ENV = previous.nodeEnv;
+	});
+
+	it("derives https://<domain>/mcp from an HTTPS panel domain", () => {
+		expect(panelMcpResource({ host: " Panel.Example.com ", https: true })).toBe(
+			"https://panel.example.com/mcp",
+		);
+	});
+
+	it("derives nothing without a domain, without HTTPS, or from a malformed host", () => {
+		expect(
+			panelMcpResource({ host: "panel.example.com", https: false }),
+		).toBeNull();
+		expect(panelMcpResource({ host: "", https: true })).toBeNull();
+		expect(panelMcpResource({ host: null, https: true })).toBeNull();
+		expect(panelMcpResource(null)).toBeNull();
+		expect(
+			panelMcpResource({ host: "evil.example/x", https: true }),
+		).toBeNull();
+		expect(
+			panelMcpResource({ host: "a@evil.example", https: true }),
+		).toBeNull();
+	});
+
+	it("uses the panel domain when DOKPLOY_MCP_RESOURCE_URL is not set", async () => {
+		setPanelMcpResource("https://panel.example.com/mcp");
+		expect(getMcpResourceUrls()).toEqual(["https://panel.example.com/mcp"]);
+		expect(resolveResource(request("panel.example.com"))).toBe(
+			"https://panel.example.com/mcp",
+		);
+		expect((await handleMcpRequest(request("panel.example.com"))).status).toBe(
+			401,
+		);
+	});
+
+	it("prefers DOKPLOY_MCP_RESOURCE_URL over the panel domain", () => {
+		setPanelMcpResource("https://panel.example.com/mcp");
+		env.DOKPLOY_MCP_RESOURCE_URL = RESOURCE;
+		expect(getMcpResourceUrls()).toEqual([RESOURCE]);
 	});
 });
 

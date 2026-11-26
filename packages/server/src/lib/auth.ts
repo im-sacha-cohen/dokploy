@@ -16,6 +16,12 @@ import { and, desc, eq } from "drizzle-orm";
 import { getRootAdminIds, IS_CLOUD } from "../constants";
 import { db } from "../db";
 import * as schema from "../db/schema";
+import {
+	getPanelMcpResource,
+	isMcpResourceFromEnv,
+	panelMcpResource,
+	setPanelMcpResource,
+} from "../mcp/config";
 import { mcpOAuthPlugins } from "../mcp/oauth-plugins";
 import {
 	getTrustedOrigins,
@@ -601,18 +607,54 @@ if (!globalForAuth.betterAuthInstance) {
 	globalForAuth.betterAuthInstance = createBetterAuth();
 }
 
-const { handler, api } = globalForAuth.betterAuthInstance;
+// Read on every use: refreshMcpAuth may replace the instance.
+const current = () =>
+	globalForAuth.betterAuthInstance as ReturnType<typeof createBetterAuth>;
 
 const _auth = {
-	handler,
-	createApiKey: api.createApiKey,
-	registerSSOProvider: api.registerSSOProvider,
-	updateSSOProvider: api.updateSSOProvider,
-	generateSCIMToken: api.generateSCIMToken,
-	listSCIMProviderConnections: api.listSCIMProviderConnections,
-	deleteSCIMProviderConnection: api.deleteSCIMProviderConnection,
-	getJwks: api.getJwks,
-	getOAuthServerConfig: api.getOAuthServerConfig,
+	get handler() {
+		return current().handler;
+	},
+	get createApiKey() {
+		return current().api.createApiKey;
+	},
+	get registerSSOProvider() {
+		return current().api.registerSSOProvider;
+	},
+	get updateSSOProvider() {
+		return current().api.updateSSOProvider;
+	},
+	get generateSCIMToken() {
+		return current().api.generateSCIMToken;
+	},
+	get listSCIMProviderConnections() {
+		return current().api.listSCIMProviderConnections;
+	},
+	get deleteSCIMProviderConnection() {
+		return current().api.deleteSCIMProviderConnection;
+	},
+	get getJwks() {
+		return current().api.getJwks;
+	},
+	get getOAuthServerConfig() {
+		return current().api.getOAuthServerConfig;
+	},
+};
+
+/**
+ * Takes the MCP URL from the panel domain when DOKPLOY_MCP_RESOURCE_URL is
+ * not set. The OAuth plugins read it when better-auth is created, so the
+ * instance is rebuilt when it changes. Call at startup and after the panel
+ * domain changes.
+ */
+export const refreshMcpAuth = async () => {
+	if (IS_CLOUD) return;
+	const next = panelMcpResource(await getWebServerSettings());
+	if (next === getPanelMcpResource()) return;
+	setPanelMcpResource(next);
+	if (!isMcpResourceFromEnv()) {
+		globalForAuth.betterAuthInstance = createBetterAuth();
+	}
 };
 
 export type AuthType = typeof _auth;
@@ -638,7 +680,7 @@ const resolveRequest = async (request: IncomingMessage) => {
 	const apiKey = request.headers["x-api-key"] as string;
 	if (apiKey) {
 		try {
-			const { valid, key, error } = await api.verifyApiKey({
+			const { valid, key, error } = await current().api.verifyApiKey({
 				body: {
 					key: apiKey,
 				},
@@ -748,7 +790,7 @@ const resolveRequest = async (request: IncomingMessage) => {
 	}
 
 	// If no API key, proceed with normal session validation
-	const session = await api.getSession({
+	const session = await current().api.getSession({
 		headers: new Headers({
 			cookie: request.headers.cookie || "",
 		}),

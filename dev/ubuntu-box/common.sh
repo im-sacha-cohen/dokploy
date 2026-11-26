@@ -15,7 +15,11 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ] && [ ! -d /sys/fs/cgroup/init ]; the
 	xargs -rn1 </sys/fs/cgroup/cgroup.procs >/sys/fs/cgroup/init/cgroup.procs 2>/dev/null || :
 	sed -e "s/ / +/g" -e "s/^/+/" </sys/fs/cgroup/cgroup.controllers >/sys/fs/cgroup/cgroup.subtree_control
 fi
-pgrep -x dockerd >/dev/null || nohup dockerd >/var/log/dockerd.log 2>&1 &
+# After a restart of the box, the pid files of the last run are left behind.
+if ! pgrep -x dockerd >/dev/null; then
+	rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid
+	nohup dockerd >/var/log/dockerd.log 2>&1 &
+fi
 for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && exit 0; sleep 1; done
 tail -20 /var/log/dockerd.log; exit 1'
 }

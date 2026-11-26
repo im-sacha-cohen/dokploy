@@ -92,8 +92,8 @@ export const DokployAutoUpdate = () => {
 										<div className="flex flex-col gap-2">
 											<span>
 												The updater stopped while{" "}
-												{state.status.replace("_", " ")}
-												(server restart?). Nothing else updates until the
+												{state.status.replace("_", " ")} (for example, the
+												server restarted). Nothing else updates until the
 												version that ran before is put back.
 											</span>
 											<DialogAction

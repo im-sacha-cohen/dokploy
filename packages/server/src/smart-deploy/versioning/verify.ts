@@ -73,6 +73,25 @@ const isSuperseded = async (applicationId: string, createdAt: string) => {
 	return newer.length > 0;
 };
 
+/** Why Swarm rolled the service back since `since`, or null. */
+export const swarmRollback = (
+	status: { State?: string; StartedAt?: string; Message?: string } | undefined,
+	since: number,
+) => {
+	if (!status?.State?.startsWith("rollback")) return null;
+	if (new Date(status.StartedAt ?? 0).getTime() < since) return null;
+	return `Swarm put the previous image back: ${status.Message || "the new container did not start"}`;
+};
+
+/** Recorded after the pull or build, possibly once verification started. */
+const deployedImage = async (deploymentId: string) => {
+	const [row] = await db
+		.select({ imageId: deployments.imageId })
+		.from(deployments)
+		.where(eq(deployments.deploymentId, deploymentId));
+	return row?.imageId ?? null;
+};
+
 /**
  * Observes the service after a deployment and records each stage separately:
  * build ≠ container created ≠ running ≠ healthy ≠ reachable.
@@ -113,6 +132,17 @@ export const verifyDeployment = async (
 		}
 
 		const service = await docker.getService(application.appName).inspect();
+		// A new container that fails makes Swarm roll the service back: the
+		// task it starts then runs the previous image and must not count.
+		const rollback = swarmRollback(service.UpdateStatus, since);
+		if (rollback) {
+			v.stages.containerRunning = {
+				status: "failed",
+				at: nowIso(),
+				detail: rollback,
+			};
+			break;
+		}
 		const forceUpdate = service.Spec?.TaskTemplate?.ForceUpdate ?? 0;
 		const tasks = (
 			await docker.listTasks({
@@ -164,6 +194,15 @@ export const verifyDeployment = async (
 				continue;
 			}
 			runningImageId = info.Image;
+			const deployedImageId = await deployedImage(deploymentId);
+			if (deployedImageId && runningImageId !== deployedImageId) {
+				v.stages.containerRunning = {
+					status: "failed",
+					at: nowIso(),
+					detail: "the running container is not the deployed image",
+				};
+				break;
+			}
 			deadline = Math.max(
 				deadline,
 				new Date(row.createdAt).getTime() +

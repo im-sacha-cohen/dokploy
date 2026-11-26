@@ -75,7 +75,7 @@ export const handleMcpRequest = async (request: Request): Promise<Response> => {
 		return jsonResponse(503, {
 			error: "mcp_not_configured",
 			error_description:
-				"Set DOKPLOY_MCP_RESOURCE_URL to the public URL of /mcp to enable the MCP server.",
+				"Give the panel an HTTPS domain in Settings > Web Server, or set DOKPLOY_MCP_RESOURCE_URL to the public URL of /mcp, to enable the MCP server.",
 		});
 	}
 	const resource = resolveResource(request);

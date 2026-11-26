@@ -1,6 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { paths } from "../constants";
 import { db } from "../db";
@@ -215,6 +215,7 @@ export const reconcileDokployUpdater = async (): Promise<
 	if (!run) return "idle";
 
 	if (isFinalUpdaterStatus(state.status)) {
+		await settleEarlierRuns(state.runId);
 		if (!run.finishedAt) {
 			const [updated] = await db
 				.update(updateRun)
@@ -254,6 +255,52 @@ export const reconcileDokployUpdater = async (): Promise<
 		if (updated) await notifyDokployRun(updated);
 	}
 	return "interrupted";
+};
+
+const UNFINISHED: UpdaterStatus[] = [
+	"backing_up",
+	"updating",
+	"verifying",
+	"restoring",
+];
+
+/**
+ * Finishes rows of runs other than the current one that are still marked in
+ * progress. Going back restores a database saved while an update was
+ * starting, with that update's row half-written: its run folder keeps how it
+ * ended. Only one updater runs at a time, so none of them still runs.
+ */
+export const settleEarlierRuns = async (currentRunId: string) => {
+	const stale = await db.query.updateRun.findMany({
+		where: and(
+			eq(updateRun.targetType, "dokploy"),
+			inArray(updateRun.status, UNFINISHED),
+			ne(updateRun.updaterRunId, currentRunId),
+		),
+	});
+	for (const run of stale) {
+		if (!run.updaterRunId) continue;
+		let ended: UpdaterState | null = null;
+		try {
+			ended = JSON.parse(
+				await readFile(
+					path.join(updatesDir(), "runs", run.updaterRunId, "state.json"),
+					"utf8",
+				),
+			) as UpdaterState;
+		} catch {}
+		if (!ended || !isFinalUpdaterStatus(ended.status)) continue;
+		await db
+			.update(updateRun)
+			.set({
+				status: ended.status,
+				reason: ended.message || null,
+				fromImage: ended.fromImage,
+				toImage: ended.toImage,
+				finishedAt: ended.updatedAt,
+			})
+			.where(eq(updateRun.updateRunId, run.updateRunId));
+	}
 };
 
 /** Follows a running updater until its run is finished or interrupted. */

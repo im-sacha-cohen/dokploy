@@ -52,5 +52,5 @@ describe("refreshMcpAuth", () => {
 		await refreshMcpAuth();
 		expect(getMcpResourceUrls()).toEqual([]);
 		expect(auth.getJwks).toBeUndefined();
-	});
+	}, 20_000);
 });

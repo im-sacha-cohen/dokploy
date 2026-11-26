@@ -215,6 +215,10 @@ const runBackupNow = async (backupId: string) => {
 	return row?.status === "done";
 };
 
+/** Smart Deploy writes "pending", then "verifying", before its verdict. */
+export const hasVerdict = (status: string | null) =>
+	!!status && status !== "pending" && status !== "verifying";
+
 /** The deployment started after `since`, once finished and verified. */
 const waitForDeployment = async (applicationId: string, since: string) => {
 	const deadline = Date.now() + DEPLOY_TIMEOUT_MS;
@@ -233,7 +237,7 @@ const waitForDeployment = async (applicationId: string, since: string) => {
 			.limit(1);
 		if (row?.status === "error") return row;
 		if (row?.status === "done") {
-			if (row.verificationStatus) return row;
+			if (hasVerdict(row.verificationStatus)) return row;
 			finishedAt ||= Date.now();
 			if (Date.now() - finishedAt > VERDICT_TIMEOUT_MS) return row;
 		}
@@ -278,6 +282,13 @@ const deployAndVerify = async (
 	const verdict = deployment.verificationStatus;
 	if (verdict !== "healthy" && verdict !== "running") {
 		return `Smart Deploy found the new version ${verdict ?? "unverified"}.`;
+	}
+	if (
+		deployment.imageId &&
+		deployment.runningImageId &&
+		deployment.imageId !== deployment.runningImageId
+	) {
+		return "The new image is not the one running: Swarm put the previous one back.";
 	}
 	await sleep(verifyMinutes * MINUTE_MS);
 	const containers = await runningContainers(app).catch(() => null);

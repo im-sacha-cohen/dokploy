@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
 	base: "",
 	rows: [] as Record<string, unknown>[],
+	stale: [] as Record<string, unknown>[],
 	updaterRunning: false,
 }));
 
@@ -26,6 +27,7 @@ vi.mock("@dokploy/server/db", () => {
 			query: {
 				updateRun: {
 					findFirst: () => Promise.resolve(state.rows[0]),
+					findMany: () => Promise.resolve(state.stale),
 				},
 			},
 			insert: () => ({
@@ -71,6 +73,7 @@ vi.mock("@dokploy/server/utils/notifications/auto-update", () => ({
 import {
 	isDokployUpdateBusy,
 	reconcileDokployUpdater,
+	settleEarlierRuns,
 } from "@dokploy/server/auto-update/dokploy-updater";
 
 const writeState = (fields: Record<string, unknown>) =>
@@ -109,6 +112,7 @@ describe("reconcileDokployUpdater", () => {
 		state.base = mkdtempSync(join(tmpdir(), "dokploy-updates-"));
 		await mkdir(join(state.base, "updates"));
 		state.rows = [];
+		state.stale = [];
 		state.updaterRunning = false;
 		notify.mockClear();
 	});
@@ -185,6 +189,51 @@ describe("reconcileDokployUpdater", () => {
 		expect(notify.mock.calls[0]?.[0]).toMatchObject({
 			title: "Dokploy rolled back",
 			outcome: "success",
+		});
+	});
+});
+
+describe("settleEarlierRuns", () => {
+	beforeEach(async () => {
+		state.base = mkdtempSync(join(tmpdir(), "dokploy-updates-"));
+		await mkdir(join(state.base, "updates", "runs", "20261129T020000Z-abc"), {
+			recursive: true,
+		});
+		state.rows = [];
+		state.stale = [];
+	});
+	afterEach(() => rmSync(state.base, { recursive: true, force: true }));
+
+	it("finishes the half-written row of an update a go-back restored", async () => {
+		// The database put back was saved while this update was backing up.
+		panelRow("backing_up");
+		state.stale = [state.rows[0] as Record<string, unknown>];
+		writeFileSync(
+			join(state.base, "updates", "runs", "20261129T020000Z-abc", "state.json"),
+			JSON.stringify({
+				runId: "20261129T020000Z-abc",
+				kind: "update",
+				status: "succeeded",
+				fromImage: "ghcr.io/me/dokploy:smart-deploy@sha256:old",
+				toImage: "ghcr.io/me/dokploy:smart-deploy@sha256:new",
+				updatedAt: "2026-11-29T02:09:00Z",
+				message: "",
+			}),
+		);
+		await settleEarlierRuns("20261129T030000Z-rollback");
+		expect(state.rows[0]).toMatchObject({
+			status: "succeeded",
+			finishedAt: "2026-11-29T02:09:00Z",
+		});
+	});
+
+	it("leaves a row alone when its run folder has no final state", async () => {
+		panelRow("backing_up");
+		state.stale = [state.rows[0] as Record<string, unknown>];
+		await settleEarlierRuns("20261129T030000Z-rollback");
+		expect(state.rows[0]).toMatchObject({
+			status: "backing_up",
+			finishedAt: null,
 		});
 	});
 });
